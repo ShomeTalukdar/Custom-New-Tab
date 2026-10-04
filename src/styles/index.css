@@ -77,6 +77,9 @@ body {
   opacity: 0.022;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
   background-repeat: repeat;
+  will-change: transform;
+  transform: translateZ(0);
+  contain: strict;
 }
 
 #cursor-glow {
@@ -86,8 +89,11 @@ body {
   height: 100%;
   pointer-events: none;
   z-index: 2;
+  will-change: transform;
+  transform: translateZ(0);
+  contain: strict;
   background: radial-gradient(
-    620px circle at var(--cursor-x) var(--cursor-y),
+    620px circle at var(--cursor-x, 50vw) var(--cursor-y, 50vh),
     rgba(255, 255, 255, 0.026),
     transparent 70%
   );

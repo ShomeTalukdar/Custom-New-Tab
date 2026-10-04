@@ -64,28 +64,51 @@ document.addEventListener('DOMContentLoaded', () => {
   // Cursor Atmospheric Lighting & Proximity Awakening
   // --------------------------------------------------------------------------
   const topToolbar = document.getElementById('top-toolbar');
-  window.addEventListener('mousemove', (e: MouseEvent) => {
-    document.documentElement.style.setProperty('--cursor-x', `${e.clientX}px`);
-    document.documentElement.style.setProperty('--cursor-y', `${e.clientY}px`);
+  const cursorGlow = document.getElementById('cursor-glow');
 
-    // Proximity awakening for favorites sidebar
-    if (sidebar) {
-      if (e.clientX < 260) {
-        sidebar.classList.add('near-cursor');
-      } else {
-        sidebar.classList.remove('near-cursor');
-      }
-    }
+  let mouseRafScheduled = false;
+  let lastClientX = window.innerWidth / 2;
+  let lastClientY = window.innerHeight / 2;
 
-    // Proximity awakening for top-right controls
-    if (topToolbar) {
-      if (window.innerWidth - e.clientX < 240 && e.clientY < 90) {
-        topToolbar.classList.add('near-cursor');
-      } else {
-        topToolbar.classList.remove('near-cursor');
+  window.addEventListener(
+    'mousemove',
+    (e: MouseEvent) => {
+      lastClientX = e.clientX;
+      lastClientY = e.clientY;
+
+      if (!mouseRafScheduled) {
+        mouseRafScheduled = true;
+        requestAnimationFrame(() => {
+          mouseRafScheduled = false;
+
+          // Isolate style update to the dedicated glow layer
+          if (cursorGlow) {
+            cursorGlow.style.setProperty('--cursor-x', `${lastClientX}px`);
+            cursorGlow.style.setProperty('--cursor-y', `${lastClientY}px`);
+          }
+
+          // Proximity awakening for favorites sidebar
+          if (sidebar) {
+            if (lastClientX < 260) {
+              sidebar.classList.add('near-cursor');
+            } else {
+              sidebar.classList.remove('near-cursor');
+            }
+          }
+
+          // Proximity awakening for top-right controls
+          if (topToolbar) {
+            if (window.innerWidth - lastClientX < 240 && lastClientY < 90) {
+              topToolbar.classList.add('near-cursor');
+            } else {
+              topToolbar.classList.remove('near-cursor');
+            }
+          }
+        });
       }
-    }
-  });
+    },
+    { passive: true }
+  );
 
   // --------------------------------------------------------------------------
   // Particle Clock
