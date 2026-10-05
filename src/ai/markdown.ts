@@ -6,8 +6,20 @@
 export function formatSentinelMarkdown(rawText: string): string {
   if (!rawText) return '';
 
+  // 0. Strip internal tool calls, thinking blocks, and special model tokens
+  const cleanInput = rawText
+    .replace(/<\|tool_call_start\|>[\s\S]*?<\|tool_call_end\|>/gi, '')
+    .replace(/<\|tool_call_start\|>[\s\S]*$/gi, '')
+    .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '')
+    .replace(/<\|action_start\|>[\s\S]*?<\|action_end\|>/gi, '')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<\|thought\|>[\s\S]*?<\|end_thought\|>/gi, '')
+    .replace(/\[(?:google|search|web_search)\(query=[^\]]+\)\]/gi, '')
+    .replace(/<\|[a-z0-9_]+\|>/gi, '')
+    .trim();
+
   // 1. Basic HTML escaping to prevent XSS
-  let text = rawText
+  let text = cleanInput
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')

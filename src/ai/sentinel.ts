@@ -109,16 +109,53 @@ export class SentinelService {
     }
 
     try {
-      const response = await provider.generateResponse(
+      let response = await provider.generateResponse(
         trimmed,
         settings.apiKey,
         SENTINEL_SYSTEM_PROMPT,
         settings.model
       );
 
+      // Check if the response contains raw tool call tokens (<|tool_call_start|>, [google(...)], etc.)
+      if (this.containsToolCallLeakage(response)) {
+        const cleaned = this.cleanToolCalls(response);
+        // If the model gave a substantial answer along with the tool call, use the cleaned text
+        if (cleaned.length > 25) {
+          return {
+            handledLocally: false,
+            text: cleaned,
+          };
+        }
+
+        // If the response was purely a tool call, retry once with an explicit plain-text directive
+        try {
+          const directPrompt = `${trimmed}\n\n[Instruction: Answer the above question directly from your knowledge in plain text. Do not emit any tool calls or function tokens.]`;
+          const retried = await provider.generateResponse(
+            directPrompt,
+            settings.apiKey,
+            SENTINEL_SYSTEM_PROMPT,
+            settings.model
+          );
+          const retriedCleaned = this.cleanToolCalls(retried);
+          if (retriedCleaned.length > 15) {
+            return {
+              handledLocally: false,
+              text: retriedCleaned,
+            };
+          }
+        } catch {
+          // If retry fails, fall back to synthesized response
+        }
+
+        return {
+          handledLocally: false,
+          text: this.synthesizeToolCallFallback(response, trimmed),
+        };
+      }
+
       return {
         handledLocally: false,
-        text: response,
+        text: this.cleanToolCalls(response),
       };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -145,5 +182,41 @@ export class SentinelService {
         text: `Unable to complete request.\n\n${msg}`,
       };
     }
+  }
+
+  private containsToolCallLeakage(text: string): boolean {
+    if (!text) return false;
+    return (
+      text.includes('<|tool_call_start|>') ||
+      text.includes('<|tool_call_end|>') ||
+      text.includes('<tool_call>') ||
+      text.includes('google(query=') ||
+      text.includes('search(query=') ||
+      text.includes('<|action_start|>') ||
+      text.includes('<|thought|>')
+    );
+  }
+
+  private cleanToolCalls(rawText: string): string {
+    if (!rawText) return '';
+    return rawText
+      .replace(/<\|tool_call_start\|>[\s\S]*?<\|tool_call_end\|>/gi, '')
+      .replace(/<\|tool_call_start\|>[\s\S]*$/gi, '')
+      .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '')
+      .replace(/<\|action_start\|>[\s\S]*?<\|action_end\|>/gi, '')
+      .replace(/<think>[\s\S]*?<\/think>/gi, '')
+      .replace(/<\|thought\|>[\s\S]*?<\|end_thought\|>/gi, '')
+      .replace(/\[(?:google|search|web_search)\(query=[^\]]+\)\]/gi, '')
+      .replace(/<\|[a-z0-9_]+\|>/gi, '')
+      .trim();
+  }
+
+  private synthesizeToolCallFallback(rawText: string, originalQuery: string): string {
+    const match = rawText.match(/query=['"]([^'"]+)['"]/i);
+    const topic = match ? match[1] : originalQuery;
+    const cleanTopic = topic.replace(/['"+]/g, ' ').trim();
+    const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(cleanTopic)}`;
+
+    return `The model attempted to trigger an internal search query for **${cleanTopic}**.\n\nYou can access web results and official details here:\n- [Search "${cleanTopic}" on Google](${searchUrl})\n\n*(Tip: Switch your model to **Auto Free Router** or **Groq Llama 3.3 70B** in Sentinel Settings for direct conversational answers.)*`;
   }
 }
