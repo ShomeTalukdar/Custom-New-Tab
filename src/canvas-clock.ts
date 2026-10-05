@@ -26,12 +26,18 @@ interface Particle {
   vy: number;
   targetX: number;
   targetY: number;
+  finalTargetX: number;
+  finalTargetY: number;
   radius: number;
   baseRadius: number;
   alpha: number;
   targetAlpha: number;
   baseAlpha: number;
   isSeconds: boolean;
+
+  // Origin coordinates when transition began
+  originX: number;
+  originY: number;
 
   // Organic idle respiration
   idlePhaseX: number;
@@ -94,6 +100,14 @@ export class ParticleClock {
 
   // Resize observer
   private resizeObserver: ResizeObserver | null = null;
+
+  // Sentinel Mode State
+  private sentinelState: 'dormant' | 'transitioning_in' | 'active' | 'thinking' | 'transitioning_out' = 'dormant';
+  private sentinelCenterX = 0;
+  private sentinelCenterY = 0;
+  private sentinelTransitionProgress = 0;
+  private sentinelRingAngle = 0;
+  private isSentinelThinking = false;
 
   constructor(canvas: HTMLCanvasElement, options: ClockOptions) {
     this.canvas = canvas;
@@ -160,25 +174,90 @@ export class ParticleClock {
         this.stop();
       } else {
         this.start();
-        this.updateTimeTargets(true);
+        if (this.sentinelState === 'dormant') {
+          this.updateTimeTargets(true);
+        }
       }
     });
 
     if (document.fonts) {
       document.fonts.ready.then(() => {
-        this.updateTimeTargets(true);
+        if (this.sentinelState === 'dormant') {
+          this.updateTimeTargets(true);
+        }
       });
     }
   }
 
   public set24Hour(value: boolean): void {
     this.is24Hour = value;
-    this.updateTimeTargets(true);
+    if (this.sentinelState === 'dormant') {
+      this.updateTimeTargets(true);
+    }
   }
 
   public setShowSeconds(value: boolean): void {
     this.showSeconds = value;
+    if (this.sentinelState === 'dormant') {
+      this.updateTimeTargets(true);
+    }
+  }
+
+  public getSentinelState(): 'dormant' | 'transitioning_in' | 'active' | 'thinking' | 'transitioning_out' {
+    return this.sentinelState;
+  }
+
+  public isSentinelActive(): boolean {
+    return this.sentinelState === 'active' || this.sentinelState === 'thinking' || this.sentinelState === 'transitioning_in';
+  }
+
+  public setSentinelCenter(x: number, y: number): void {
+    this.sentinelCenterX = x;
+    this.sentinelCenterY = y;
+  }
+
+  public activateSentinel(targetX?: number, targetY?: number): void {
+    if (this.isSentinelActive()) return;
+    this.sentinelCenterX = targetX !== undefined ? targetX : Math.floor(this.width / 2);
+    this.sentinelCenterY = targetY !== undefined ? targetY : Math.floor(this.height * 0.46);
+
+    this.sentinelState = 'transitioning_in';
+    this.sentinelTransitionProgress = 0;
+    this.sentinelRingAngle = 0;
+
+    for (let i = 0; i < this.particles.length; i++) {
+      const p = this.particles[i];
+      p.originX = p.x;
+      p.originY = p.y;
+    }
+
+    this.updateSentinelTargets();
+  }
+
+  public deactivateSentinel(): void {
+    if (this.sentinelState === 'dormant' || this.sentinelState === 'transitioning_out') return;
+    this.sentinelState = 'transitioning_out';
+    this.sentinelTransitionProgress = 0;
+    this.isSentinelThinking = false;
+
+    for (let i = 0; i < this.particles.length; i++) {
+      const p = this.particles[i];
+      p.originX = p.x;
+      p.originY = p.y;
+    }
+
     this.updateTimeTargets(true);
+  }
+
+  public setSentinelThinking(thinking: boolean): void {
+    this.isSentinelThinking = thinking;
+    if (this.sentinelState === 'active' || this.sentinelState === 'thinking') {
+      this.sentinelState = thinking ? 'thinking' : 'active';
+    }
+  }
+
+  private easeInOutCubic(t: number): number {
+    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
   }
 
   private handleResize(): void {
@@ -196,7 +275,11 @@ export class ParticleClock {
     this.mouse.radius = Math.min(Math.max(this.height * 0.75, 140), 200);
     this.mouse.scatterRadius = Math.min(Math.max(this.height * 0.42, 75), 105);
 
-    this.updateTimeTargets(true);
+    if (this.sentinelState === 'dormant') {
+      this.updateTimeTargets(true);
+    } else {
+      this.updateSentinelTargets();
+    }
   }
 
   private getTimeString(): { main: string; sec: string } {
@@ -241,6 +324,10 @@ export class ParticleClock {
       vy: (Math.random() - 0.5) * 0.8,
       targetX: x,
       targetY: y,
+      finalTargetX: x,
+      finalTargetY: y,
+      originX: px,
+      originY: py,
       radius: baseRadius,
       baseRadius,
       alpha: 0,
@@ -261,6 +348,137 @@ export class ParticleClock {
   }
 
   /**
+   * Sample geometric points forming the Sentinel indicator:
+   * Concentric inner core (●), large primary ring (○), and orbital energy shells (◉).
+   * Big, front and center!
+   */
+  private sampleSentinelPoints(): TargetPoint[] {
+    const cx = this.sentinelCenterX || Math.floor(this.width / 2);
+    const cy = this.sentinelCenterY || Math.floor(this.height * 0.46);
+    const points: TargetPoint[] = [];
+
+    // 1. Center Core (the ● dot inside ◉) - large, dense, radiant
+    points.push({ x: cx, y: cy, alpha: 1.0, isSeconds: false });
+
+    // Inner ring 1 - radius 7px (12 particles)
+    const core1Count = 12;
+    for (let i = 0; i < core1Count; i++) {
+      const theta = (i * Math.PI * 2) / core1Count;
+      points.push({
+        x: cx + Math.cos(theta) * 7,
+        y: cy + Math.sin(theta) * 7,
+        alpha: 1.0,
+        isSeconds: false,
+      });
+    }
+
+    // Inner ring 2 - radius 16px (18 particles)
+    const core2Count = 18;
+    for (let i = 0; i < core2Count; i++) {
+      const theta = (i * Math.PI * 2) / core2Count + this.sentinelRingAngle * 0.5;
+      points.push({
+        x: cx + Math.cos(theta) * 16,
+        y: cy + Math.sin(theta) * 16,
+        alpha: 0.95,
+        isSeconds: false,
+      });
+    }
+
+    // 2. Primary Majestic Ring (the ○ ring of ◉) - radius ~48px (56 particles)
+    // Big, front, and center!
+    const ringPoints = 56;
+    const ringRadius = 48;
+    for (let i = 0; i < ringPoints; i++) {
+      const theta = (i * Math.PI * 2) / ringPoints + this.sentinelRingAngle;
+      points.push({
+        x: cx + Math.cos(theta) * ringRadius,
+        y: cy + Math.sin(theta) * ringRadius,
+        alpha: 0.95,
+        isSeconds: false,
+      });
+    }
+
+    // 3. Counter-rotating Harmonic Iris - radius ~76px (44 particles)
+    const haloPoints = 44;
+    const haloRadius = 76;
+    for (let i = 0; i < haloPoints; i++) {
+      const theta = (i * Math.PI * 2) / haloPoints - this.sentinelRingAngle * 0.7;
+      points.push({
+        x: cx + Math.cos(theta) * haloRadius,
+        y: cy + Math.sin(theta) * haloRadius,
+        alpha: 0.52,
+        isSeconds: true,
+      });
+    }
+
+    // 4. Outer Ethereal Iris Shell - radius ~106px (36 particles)
+    const outerHaloPoints = 36;
+    const outerRadius = 106;
+    for (let i = 0; i < outerHaloPoints; i++) {
+      const theta = (i * Math.PI * 2) / outerHaloPoints + this.sentinelRingAngle * 0.35;
+      points.push({
+        x: cx + Math.cos(theta) * outerRadius,
+        y: cy + Math.sin(theta) * outerRadius,
+        alpha: 0.28,
+        isSeconds: true,
+      });
+    }
+
+    return points;
+  }
+
+  /**
+   * Reorganize particle targets into the Sentinel indicator formation.
+   */
+  private updateSentinelTargets(): void {
+    const targets = this.sampleSentinelPoints();
+    const cx = this.sentinelCenterX || Math.floor(this.width / 2);
+    const cy = this.sentinelCenterY || Math.floor(this.height * 0.46);
+
+    const isTransitioning = this.sentinelState === 'transitioning_in';
+    const progress = Math.min(1, Math.max(0, this.sentinelTransitionProgress));
+    const ease = isTransitioning ? this.easeInOutCubic(progress) : 1;
+
+    for (let i = 0; i < this.particles.length; i++) {
+      const p = this.particles[i];
+
+      if (i < targets.length) {
+        const t = targets[i];
+        if (isTransitioning) {
+          p.targetX = p.originX + (t.x - p.originX) * ease;
+          p.targetY = p.originY + (t.y - p.originY) * ease;
+        } else {
+          p.targetX = t.x;
+          p.targetY = t.y;
+        }
+        p.targetAlpha = t.alpha;
+        p.baseAlpha = t.alpha;
+        p.isSeconds = t.isSeconds;
+        p.isAmbient = false;
+        p.baseRadius = t.alpha > 0.9 ? 1.25 : 0.95;
+      } else {
+        // Surplus particles form the sweeping quantum halo around Sentinel
+        p.isAmbient = true;
+        const orbitIndex = i - targets.length;
+        const orbitRadius = 35 + (orbitIndex % 110) * 1.5;
+        const orbitSpeed = (0.0018 + (orbitIndex % 7) * 0.0008) * (orbitIndex % 2 === 0 ? 1 : -1);
+        p.ambientCenterX = cx;
+        p.ambientCenterY = cy;
+        p.ambientRadius = orbitRadius;
+        p.ambientSpeed = this.isSentinelThinking ? orbitSpeed * 2.8 : orbitSpeed;
+        p.targetAlpha = 0.06 + (orbitIndex % 8) * 0.016;
+        p.baseAlpha = p.targetAlpha;
+        p.baseRadius = 0.85;
+      }
+    }
+
+    if (this.onParticleCountUpdate) {
+      this.onParticleCountUpdate(this.particles.length);
+    }
+  }
+
+
+  /**
    * Optimized glyph contour sampling.
    * Step size tuned to 3.2px with 1.1px radius for dense continuity at 60+ FPS.
    */
@@ -279,8 +497,10 @@ export class ParticleClock {
 
     offCtx.clearRect(0, 0, sampleWidth, sampleHeight);
 
+    // Dedicate center region of canvas to clock digits to align seamlessly with Sentinel
+    const clockAreaHeight = Math.min(sampleHeight * 0.75, 250);
     const baseFontSize = Math.min(
-      Math.floor(sampleHeight * 0.72),
+      Math.floor(clockAreaHeight * 0.78),
       Math.floor(sampleWidth / (this.showSeconds ? 6.5 : 4.6))
     );
     const secFontSize = Math.floor(baseFontSize * 0.44);
@@ -303,7 +523,7 @@ export class ParticleClock {
 
     const totalWidth = mainWidth + secWidth;
     const startX = Math.floor((sampleWidth - totalWidth) / 2);
-    const centerY = Math.floor(sampleHeight / 2);
+    const centerY = Math.floor(sampleHeight * 0.46);
 
     // Draw main digits ('HH:MM')
     offCtx.font = `600 ${baseFontSize}px 'Geist Mono', 'JetBrains Mono', monospace`;
@@ -367,6 +587,10 @@ export class ParticleClock {
    * while new points pull the nearest available particles.
    */
   private updateTimeTargets(force = false): void {
+    if (this.sentinelState !== 'dormant' && this.sentinelState !== 'transitioning_out') {
+      return;
+    }
+
     const now = new Date();
     const currentSec = now.getSeconds();
 
@@ -403,8 +627,15 @@ export class ParticleClock {
       if (target && !matchedTargetKeys.has(key)) {
         matchedTargetKeys.add(key);
         claimedParticleIndices.add(i);
-        p.targetX = target.x;
-        p.targetY = target.y;
+        p.finalTargetX = target.x;
+        p.finalTargetY = target.y;
+        if (this.sentinelState === 'transitioning_out') {
+          p.targetX = p.originX;
+          p.targetY = p.originY;
+        } else {
+          p.targetX = target.x;
+          p.targetY = target.y;
+        }
         p.targetAlpha = target.alpha;
         p.baseAlpha = target.alpha;
         p.isSeconds = target.isSeconds;
@@ -459,8 +690,15 @@ export class ParticleClock {
 
       if (bestIdx !== -1) {
         const p = this.particles[bestIdx];
-        p.targetX = target.x;
-        p.targetY = target.y;
+        p.finalTargetX = target.x;
+        p.finalTargetY = target.y;
+        if (this.sentinelState === 'transitioning_out') {
+          p.targetX = p.originX;
+          p.targetY = p.originY;
+        } else {
+          p.targetX = target.x;
+          p.targetY = target.y;
+        }
         p.targetAlpha = target.alpha;
         p.baseAlpha = target.alpha;
         p.isSeconds = target.isSeconds;
@@ -529,6 +767,25 @@ export class ParticleClock {
       p.vx += dx * spring;
       p.vy += dy * spring;
 
+      // Inward / outward organic swirl during Sentinel transition
+      if (this.sentinelState === 'transitioning_in' || this.sentinelState === 'transitioning_out') {
+        const cx = this.sentinelCenterX || Math.floor(this.width / 2);
+        const cy = this.sentinelCenterY || Math.floor(this.height * 0.46);
+        const toCx = cx - p.x;
+        const toCy = cy - p.y;
+        const dist = Math.hypot(toCx, toCy);
+
+        if (dist > 8) {
+          const progress = Math.min(1, Math.max(0, this.sentinelTransitionProgress));
+          const swirlMag = this.sentinelState === 'transitioning_in' ? 1.6 : -1.2;
+          const swirl = Math.sin(progress * Math.PI) * swirlMag;
+          const normalX = toCx / dist;
+          const normalY = toCy / dist;
+          p.vx += -normalY * swirl;
+          p.vy += normalX * swirl;
+        }
+      }
+
       let isDisturbed = false;
 
       // Mouse field interaction
@@ -592,7 +849,7 @@ export class ParticleClock {
 
     const len = this.particles.length;
 
-    // Batch 1: Ambient stardust
+    // Batch 1: Ambient stardust & Sentinel aura
     ctx.fillStyle = 'rgba(255, 255, 255, 0.14)';
     ctx.beginPath();
     for (let i = 0; i < len; i++) {
@@ -604,7 +861,7 @@ export class ParticleClock {
     }
     ctx.fill();
 
-    // Batch 2: Seconds digits (dimmer, rest state)
+    // Batch 2: Seconds digits / subtle ring particles
     ctx.fillStyle = 'rgba(255, 255, 255, 0.32)';
     ctx.beginPath();
     for (let i = 0; i < len; i++) {
@@ -616,7 +873,7 @@ export class ParticleClock {
     }
     ctx.fill();
 
-    // Batch 3: Main clock digits (hours, colons, minutes, rest state)
+    // Batch 3: Main clock digits & Sentinel core/ring
     ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
     ctx.beginPath();
     for (let i = 0; i < len; i++) {
@@ -644,7 +901,36 @@ export class ParticleClock {
   private tick = (timestamp: number): void => {
     if (!this.isRunning) return;
 
-    this.updateTimeTargets(false);
+    if (this.sentinelState === 'transitioning_in') {
+      this.sentinelTransitionProgress += 0.007; // ~2.4 seconds at 60fps - smooth, slow and cinematic
+      this.sentinelRingAngle += 0.015;
+      this.updateSentinelTargets();
+      if (this.sentinelTransitionProgress >= 1) {
+        this.sentinelState = 'active';
+      }
+    } else if (this.sentinelState === 'active' || this.sentinelState === 'thinking') {
+      this.sentinelRingAngle += this.sentinelState === 'thinking' ? 0.045 : 0.01;
+      this.updateSentinelTargets();
+    } else if (this.sentinelState === 'transitioning_out') {
+      this.sentinelTransitionProgress += 0.009; // ~1.8 seconds - smooth return
+      const progress = Math.min(1, this.sentinelTransitionProgress);
+      const ease = this.easeInOutCubic(progress);
+
+      for (let i = 0; i < this.particles.length; i++) {
+        const p = this.particles[i];
+        if (!p.isAmbient) {
+          p.targetX = p.originX + (p.finalTargetX - p.originX) * ease;
+          p.targetY = p.originY + (p.finalTargetY - p.originY) * ease;
+        }
+      }
+
+      if (this.sentinelTransitionProgress >= 1) {
+        this.sentinelState = 'dormant';
+      }
+    } else {
+      this.updateTimeTargets(false);
+    }
+
     this.updateParticles();
     this.render();
 
@@ -685,3 +971,4 @@ export class ParticleClock {
     }
   }
 }
+

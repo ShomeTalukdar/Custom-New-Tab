@@ -10,6 +10,9 @@ export class SearchController {
   private container: HTMLElement;
   private clearBtn: HTMLButtonElement;
   private kbdHint: HTMLElement;
+  private mode: 'search' | 'sentinel' = 'search';
+
+  public onSentinelSubmit?: (query: string) => void;
 
   constructor(
     form: HTMLFormElement,
@@ -65,6 +68,21 @@ export class SearchController {
     });
   }
 
+  public setMode(mode: 'search' | 'sentinel'): void {
+    this.mode = mode;
+    if (mode === 'sentinel') {
+      this.input.placeholder = 'Ask Sentinel...';
+      this.container.classList.add('sentinel-mode');
+    } else {
+      this.input.placeholder = 'Search the web or type a URL...';
+      this.container.classList.remove('sentinel-mode');
+    }
+  }
+
+  public getMode(): 'search' | 'sentinel' {
+    return this.mode;
+  }
+
   public focus(): void {
     this.input.focus();
     this.input.select();
@@ -83,6 +101,11 @@ export class SearchController {
     this.updateClearBtnVisibility();
   }
 
+  public setValue(val: string): void {
+    this.input.value = val;
+    this.updateClearBtnVisibility();
+  }
+
   private updateClearBtnVisibility(): void {
     if (this.input.value.trim().length > 0) {
       this.clearBtn.classList.add('visible');
@@ -94,6 +117,13 @@ export class SearchController {
   private executeSearch(): void {
     const query = this.input.value.trim();
     if (!query) return;
+
+    if (this.mode === 'sentinel') {
+      if (this.onSentinelSubmit) {
+        this.onSentinelSubmit(query);
+      }
+      return;
+    }
 
     // Check if query is a URL or domain
     const isExplicitUrl = /^https?:\/\//i.test(query);
@@ -110,3 +140,4 @@ export class SearchController {
     }
   }
 }
+
