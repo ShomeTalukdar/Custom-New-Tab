@@ -400,6 +400,8 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const toggleSentinelMode = () => {
+    if (clock.isTransitioning()) return;
+
     if (clock.isSentinelActive()) {
       deactivateSentinelMode();
     } else {
@@ -708,6 +710,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         e.preventDefault();
+        if (clock.isTransitioning()) return;
         if (clock.isSentinelActive()) {
           deactivateSentinelMode();
         } else {
@@ -731,8 +734,8 @@ document.addEventListener('DOMContentLoaded', () => {
         closeShortcutsModal();
         return;
       }
-      // If Sentinel is active, Escape exits Sentinel and reconstructs clock
-      if (clock.isSentinelActive()) {
+      // If Sentinel is active or transitioning, Escape exits Sentinel and reconstructs clock
+      if (clock.isSentinelBusy()) {
         deactivateSentinelMode();
         return;
       }

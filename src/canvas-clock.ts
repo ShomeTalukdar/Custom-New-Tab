@@ -211,13 +211,21 @@ export class ParticleClock {
     return this.sentinelState === 'active' || this.sentinelState === 'thinking' || this.sentinelState === 'transitioning_in';
   }
 
+  public isSentinelBusy(): boolean {
+    return this.sentinelState !== 'dormant';
+  }
+
+  public isTransitioning(): boolean {
+    return this.sentinelState === 'transitioning_in' || this.sentinelState === 'transitioning_out';
+  }
+
   public setSentinelCenter(x: number, y: number): void {
     this.sentinelCenterX = x;
     this.sentinelCenterY = y;
   }
 
   public activateSentinel(targetX?: number, targetY?: number): void {
-    if (this.isSentinelActive()) return;
+    if (this.sentinelState === 'active' || this.sentinelState === 'thinking' || this.sentinelState === 'transitioning_in') return;
     this.sentinelCenterX = targetX !== undefined ? targetX : Math.floor(this.width / 2);
     this.sentinelCenterY = targetY !== undefined ? targetY : Math.floor(this.height * 0.46);
 
@@ -262,8 +270,17 @@ export class ParticleClock {
 
   private handleResize(): void {
     const rect = this.container.getBoundingClientRect();
-    this.width = Math.max(rect.width, 300);
-    this.height = Math.max(rect.height, 140);
+    const newWidth = Math.max(Math.floor(rect.width), 300);
+    const newHeight = Math.max(Math.floor(rect.height), 140);
+
+    // Only reconfigure context & dimensions if actual bounds changed
+    const sizeChanged = newWidth !== this.width || newHeight !== this.height;
+    if (!sizeChanged && this.canvas.width > 0) {
+      return;
+    }
+
+    this.width = newWidth;
+    this.height = newHeight;
 
     // Cap DPR at 1.5 for optimal performance on Retina/4K screens
     this.dpr = Math.min(window.devicePixelRatio || 1, 1.5);
@@ -275,7 +292,7 @@ export class ParticleClock {
     this.mouse.radius = Math.min(Math.max(this.height * 0.75, 140), 200);
     this.mouse.scatterRadius = Math.min(Math.max(this.height * 0.42, 75), 105);
 
-    if (this.sentinelState === 'dormant') {
+    if (this.sentinelState === 'dormant' || this.sentinelState === 'transitioning_out') {
       this.updateTimeTargets(true);
     } else {
       this.updateSentinelTargets();
@@ -777,7 +794,7 @@ export class ParticleClock {
 
         if (dist > 8) {
           const progress = Math.min(1, Math.max(0, this.sentinelTransitionProgress));
-          const swirlMag = this.sentinelState === 'transitioning_in' ? 1.6 : -1.2;
+          const swirlMag = this.sentinelState === 'transitioning_in' ? 1.4 : -0.7;
           const swirl = Math.sin(progress * Math.PI) * swirlMag;
           const normalX = toCx / dist;
           const normalY = toCy / dist;
@@ -855,8 +872,9 @@ export class ParticleClock {
     for (let i = 0; i < len; i++) {
       const p = this.particles[i];
       if (p.isAmbient && p.alpha > 0.02) {
-        ctx.moveTo(p.x + p.radius, p.y);
-        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        const r = Math.max(0.1, p.radius);
+        ctx.moveTo(p.x + r, p.y);
+        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
       }
     }
     ctx.fill();
@@ -867,8 +885,9 @@ export class ParticleClock {
     for (let i = 0; i < len; i++) {
       const p = this.particles[i];
       if (!p.isAmbient && p.isSeconds && p.alpha <= 0.55 && p.alpha > 0.02) {
-        ctx.moveTo(p.x + p.radius, p.y);
-        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        const r = Math.max(0.1, p.radius);
+        ctx.moveTo(p.x + r, p.y);
+        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
       }
     }
     ctx.fill();
@@ -879,8 +898,9 @@ export class ParticleClock {
     for (let i = 0; i < len; i++) {
       const p = this.particles[i];
       if (!p.isAmbient && !p.isSeconds && p.alpha <= 0.96 && p.alpha > 0.02) {
-        ctx.moveTo(p.x + p.radius, p.y);
-        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        const r = Math.max(0.1, p.radius);
+        ctx.moveTo(p.x + r, p.y);
+        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
       }
     }
     ctx.fill();
@@ -891,8 +911,9 @@ export class ParticleClock {
     for (let i = 0; i < len; i++) {
       const p = this.particles[i];
       if (!p.isAmbient && p.alpha > (p.isSeconds ? 0.55 : 0.96)) {
-        ctx.moveTo(p.x + p.radius, p.y);
-        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        const r = Math.max(0.1, p.radius);
+        ctx.moveTo(p.x + r, p.y);
+        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
       }
     }
     ctx.fill();
@@ -901,47 +922,61 @@ export class ParticleClock {
   private tick = (timestamp: number): void => {
     if (!this.isRunning) return;
 
-    if (this.sentinelState === 'transitioning_in') {
-      this.sentinelTransitionProgress += 0.007; // ~2.4 seconds at 60fps - smooth, slow and cinematic
-      this.sentinelRingAngle += 0.015;
-      this.updateSentinelTargets();
-      if (this.sentinelTransitionProgress >= 1) {
-        this.sentinelState = 'active';
-      }
-    } else if (this.sentinelState === 'active' || this.sentinelState === 'thinking') {
-      this.sentinelRingAngle += this.sentinelState === 'thinking' ? 0.045 : 0.01;
-      this.updateSentinelTargets();
-    } else if (this.sentinelState === 'transitioning_out') {
-      this.sentinelTransitionProgress += 0.009; // ~1.8 seconds - smooth return
-      const progress = Math.min(1, this.sentinelTransitionProgress);
-      const ease = this.easeInOutCubic(progress);
+    try {
+      if (this.sentinelState === 'transitioning_in') {
+        this.sentinelTransitionProgress += 0.016; // ~1.0 second smooth & cinematic
+        this.sentinelRingAngle += 0.02;
+        this.updateSentinelTargets();
+        if (this.sentinelTransitionProgress >= 1) {
+          this.sentinelState = 'active';
+        }
+      } else if (this.sentinelState === 'active' || this.sentinelState === 'thinking') {
+        this.sentinelRingAngle += this.sentinelState === 'thinking' ? 0.045 : 0.01;
+        this.updateSentinelTargets();
+      } else if (this.sentinelState === 'transitioning_out') {
+        this.sentinelTransitionProgress += 0.018; // ~0.9 second smooth return
+        const progress = Math.min(1, this.sentinelTransitionProgress);
+        const ease = this.easeInOutCubic(progress);
 
-      for (let i = 0; i < this.particles.length; i++) {
-        const p = this.particles[i];
-        if (!p.isAmbient) {
-          p.targetX = p.originX + (p.finalTargetX - p.originX) * ease;
-          p.targetY = p.originY + (p.finalTargetY - p.originY) * ease;
+        for (let i = 0; i < this.particles.length; i++) {
+          const p = this.particles[i];
+          if (!p.isAmbient) {
+            p.targetX = p.originX + (p.finalTargetX - p.originX) * ease;
+            p.targetY = p.originY + (p.finalTargetY - p.originY) * ease;
+          }
+        }
+
+        if (this.sentinelTransitionProgress >= 1) {
+          this.sentinelState = 'dormant';
+          // Ensure every particle locks cleanly into its final clock target
+          for (let i = 0; i < this.particles.length; i++) {
+            const p = this.particles[i];
+            if (!p.isAmbient) {
+              p.targetX = p.finalTargetX;
+              p.targetY = p.finalTargetY;
+            }
+          }
+          // Force synchronize clock targets to current time
+          this.updateTimeTargets(true);
+        }
+      } else {
+        this.updateTimeTargets(false);
+      }
+
+      this.updateParticles();
+      this.render();
+
+      this.frameCount++;
+      if (timestamp - this.lastFpsTimestamp >= 1000) {
+        this.currentFps = Math.round((this.frameCount * 1000) / (timestamp - this.lastFpsTimestamp));
+        this.frameCount = 0;
+        this.lastFpsTimestamp = timestamp;
+        if (this.onFpsUpdate) {
+          this.onFpsUpdate(this.currentFps);
         }
       }
-
-      if (this.sentinelTransitionProgress >= 1) {
-        this.sentinelState = 'dormant';
-      }
-    } else {
-      this.updateTimeTargets(false);
-    }
-
-    this.updateParticles();
-    this.render();
-
-    this.frameCount++;
-    if (timestamp - this.lastFpsTimestamp >= 1000) {
-      this.currentFps = Math.round((this.frameCount * 1000) / (timestamp - this.lastFpsTimestamp));
-      this.frameCount = 0;
-      this.lastFpsTimestamp = timestamp;
-      if (this.onFpsUpdate) {
-        this.onFpsUpdate(this.currentFps);
-      }
+    } catch (err) {
+      console.error('ParticleClock tick error:', err);
     }
 
     this.animationFrameId = requestAnimationFrame(this.tick);
