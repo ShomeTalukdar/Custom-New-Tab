@@ -447,33 +447,33 @@ export class ParticleClock {
     // 1. Center Core (the ● dot inside ◉) - large, dense, radiant
     points.push({ x: cx, y: cy, alpha: 1.0, isSeconds: false });
 
-    // Inner ring 1 - radius 7px (12 particles)
+    // Inner ring 1 - radius 8px (12 particles)
     const core1Count = 12;
     for (let i = 0; i < core1Count; i++) {
       const theta = (i * Math.PI * 2) / core1Count;
       points.push({
-        x: cx + Math.cos(theta) * 7,
-        y: cy + Math.sin(theta) * 7,
+        x: cx + Math.cos(theta) * 8,
+        y: cy + Math.sin(theta) * 8,
         alpha: 1.0,
         isSeconds: false,
       });
     }
 
-    // Inner ring 2 - radius 15px (18 particles)
-    const core2Count = 18;
+    // Inner ring 2 - radius 18px (20 particles)
+    const core2Count = 20;
     for (let i = 0; i < core2Count; i++) {
       const theta = (i * Math.PI * 2) / core2Count + this.sentinelRingAngle * 0.5;
       points.push({
-        x: cx + Math.cos(theta) * 15,
-        y: cy + Math.sin(theta) * 15,
+        x: cx + Math.cos(theta) * 18,
+        y: cy + Math.sin(theta) * 18,
         alpha: 0.98,
         isSeconds: false,
       });
     }
 
-    // 2. Primary Ring (the ○ ring of ◉) - radius ~42px (52 particles)
-    const ringPoints = 52;
-    const ringRadius = 42;
+    // 2. Primary Majestic Ring (the ○ ring of ◉) - radius ~54px (60 particles)
+    const ringPoints = 60;
+    const ringRadius = 54;
     for (let i = 0; i < ringPoints; i++) {
       const theta = (i * Math.PI * 2) / ringPoints + this.sentinelRingAngle;
       points.push({
@@ -484,9 +484,9 @@ export class ParticleClock {
       });
     }
 
-    // 3. Counter-rotating Harmonic Iris - radius ~64px (40 particles)
-    const haloPoints = 40;
-    const haloRadius = 64;
+    // 3. Counter-rotating Harmonic Iris - radius ~82px (46 particles)
+    const haloPoints = 46;
+    const haloRadius = 82;
     for (let i = 0; i < haloPoints; i++) {
       const theta = (i * Math.PI * 2) / haloPoints - this.sentinelRingAngle * 0.7;
       points.push({
@@ -497,9 +497,9 @@ export class ParticleClock {
       });
     }
 
-    // 4. Outer Ethereal Iris Shell - radius ~84px (32 particles)
-    const outerHaloPoints = 32;
-    const outerRadius = 84;
+    // 4. Outer Ethereal Iris Shell - radius ~110px (38 particles)
+    const outerHaloPoints = 38;
+    const outerRadius = 110;
     for (let i = 0; i < outerHaloPoints; i++) {
       const theta = (i * Math.PI * 2) / outerHaloPoints + this.sentinelRingAngle * 0.35;
       points.push({
@@ -555,7 +555,7 @@ export class ParticleClock {
         // Surplus particles form the majestic black hole accretion disk & quantum halo around Sentinel
         p.isAmbient = true;
         const orbitIndex = i - targets.length;
-        const orbitRadius = 26 + (orbitIndex % 70) * 1.3;
+        const orbitRadius = 36 + (orbitIndex % 95) * 1.6;
         const orbitSpeed = (0.0018 + (orbitIndex % 7) * 0.0008) * (orbitIndex % 2 === 0 ? 1 : -1);
         p.ambientCenterX = cx;
         p.ambientCenterY = cy;

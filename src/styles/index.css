@@ -411,8 +411,8 @@ body {
 }
 
 #app.sentinel-active #clock-container {
-  height: 180px;
-  min-height: 180px;
+  height: 220px;
+  min-height: 220px;
   margin-bottom: 12px;
 }
 
