@@ -18,6 +18,7 @@ interface TargetPoint {
   y: number;
   alpha: number;
   isSeconds: boolean;
+  secSlot?: number;
 }
 
 interface Particle {
@@ -35,6 +36,7 @@ interface Particle {
   targetAlpha: number;
   baseAlpha: number;
   isSeconds: boolean;
+  secSlot?: number;
 
   // Origin coordinates when transition began
   originX: number;
@@ -54,6 +56,17 @@ interface Particle {
   ambientCenterX: number;
   ambientCenterY: number;
 }
+
+const SEC_ALPHA_TIERS = [
+  { minAlpha: 0.03, maxAlpha: 0.09, style: 'rgba(255, 255, 255, 0.06)' },
+  { minAlpha: 0.09, maxAlpha: 0.16, style: 'rgba(255, 255, 255, 0.12)' },
+  { minAlpha: 0.16, maxAlpha: 0.23, style: 'rgba(255, 255, 255, 0.19)' },
+  { minAlpha: 0.23, maxAlpha: 0.30, style: 'rgba(255, 255, 255, 0.26)' },
+  { minAlpha: 0.30, maxAlpha: 0.37, style: 'rgba(255, 255, 255, 0.33)' },
+  { minAlpha: 0.37, maxAlpha: 0.45, style: 'rgba(255, 255, 255, 0.42)' },
+  { minAlpha: 0.45, maxAlpha: 0.55, style: 'rgba(255, 255, 255, 0.50)' },
+  { minAlpha: 0.55, maxAlpha: 99.0, style: 'rgba(255, 255, 255, 0.68)' },
+] as const;
 
 export class ParticleClock {
   private canvas: HTMLCanvasElement;
@@ -92,8 +105,8 @@ export class ParticleClock {
   };
 
   // Time caching to detect string changes
-  private lastTimeString = '';
-  private lastSecond = -1;
+  private lastMainString = '';
+  private lastSecString = '';
 
   // Performance monitoring
   private frameCount = 0;
@@ -202,6 +215,8 @@ export class ParticleClock {
 
   public set24Hour(value: boolean): void {
     this.is24Hour = value;
+    this.lastMainString = '';
+    this.lastSecString = '';
     if (this.sentinelState === 'dormant') {
       this.updateTimeTargets(true);
     }
@@ -209,6 +224,8 @@ export class ParticleClock {
 
   public setShowSeconds(value: boolean): void {
     this.showSeconds = value;
+    this.lastMainString = '';
+    this.lastSecString = '';
     if (this.sentinelState === 'dormant') {
       this.updateTimeTargets(true);
     }
@@ -392,7 +409,7 @@ export class ParticleClock {
   /**
    * Helper to instantiate a silky magnetic dust particle with organic properties
    */
-  private createParticle(x: number, y: number, isAmbient = true, isSeconds = false): Particle {
+  private createParticle(x: number, y: number, isAmbient = true, isSeconds = false, secSlot = -1): Particle {
     const center = this.getClockCenter();
     const angle = Math.random() * Math.PI * 2;
     const radius = 20 + Math.random() * (this.width * 0.48);
@@ -402,7 +419,7 @@ export class ParticleClock {
     const py = isAmbient ? cy + Math.sin(angle) * radius : y;
 
     const baseRadius = isAmbient ? 0.85 : isSeconds ? 0.95 : 1.1;
-    const targetAlpha = isAmbient ? 0.18 + Math.random() * 0.20 : isSeconds ? 0.35 : 0.95;
+    const targetAlpha = isAmbient ? 0.18 + Math.random() * 0.20 : isSeconds ? 0.42 : 0.95;
 
     return {
       x: px + (Math.random() - 0.5) * 30,
@@ -421,10 +438,11 @@ export class ParticleClock {
       targetAlpha,
       baseAlpha: targetAlpha,
       isSeconds,
+      secSlot,
       idlePhaseX: Math.random() * Math.PI * 2,
       idlePhaseY: Math.random() * Math.PI * 2,
       idleSpeed: 0.002 + Math.random() * 0.003,
-      idleAmp: 0.2 + Math.random() * 0.3,
+      idleAmp: isSeconds ? 0.12 + Math.random() * 0.12 : 0.2 + Math.random() * 0.3,
       isAmbient,
       ambientAngle: Math.random() * Math.PI * 2,
       ambientSpeed: 0.0015 + Math.random() * 0.003,
@@ -579,7 +597,6 @@ export class ParticleClock {
    */
   private sampleTargetPoints(): TargetPoint[] {
     const { main, sec } = this.getTimeString();
-    const timeKey = this.showSeconds ? `${main}:${sec}` : main;
 
     // Use a dedicated bounding box for rendering clock typography
     const canvasW = Math.min(Math.max(Math.floor(this.width), 320), 1000);
@@ -667,45 +684,231 @@ export class ParticleClock {
           const globalX = globalOriginX + ix;
           const globalY = globalOriginY + iy;
           const isSec = this.showSeconds && ix >= secStartX - 2;
+          const secSlot = isSec ? (ix < secStartX + secCharWidth ? 0 : 1) : -1;
           points.push({
             x: globalX,
             y: globalY,
-            alpha: isSec ? 0.35 : 0.95,
+            alpha: isSec ? 0.42 : 0.96,
             isSeconds: isSec,
+            secSlot: isSec ? secSlot : undefined,
           });
         }
       }
     }
 
-    this.lastTimeString = timeKey;
     return points;
   }
 
   /**
+   * Smoothly morph particles within a dedicated seconds slot (tens or ones digit).
+   * Prevents criss-crossing, collapses surplus particles gracefully into the new digit contour
+   * without ghost remnants, and ensures inactive digits (like tens in 20 -> 21) remain 100% frozen.
+   */
+  private morphSecondsSlot(slot: number, slotTargets: TargetPoint[]): void {
+    if (slotTargets.length === 0) return;
+
+    // 1. Gather all existing particles for this specific slot
+    const slotParticleIndices: number[] = [];
+    for (let i = 0; i < this.particles.length; i++) {
+      const p = this.particles[i];
+      if (p.isSeconds && p.secSlot === slot) {
+        slotParticleIndices.push(i);
+      }
+    }
+
+    // 2. Ensure enough particles exist in this slot pool
+    while (slotParticleIndices.length < slotTargets.length) {
+      const refTarget = slotTargets[slotParticleIndices.length % slotTargets.length];
+      const newP = this.createParticle(refTarget.x, refTarget.y, false, true, slot);
+      newP.x = refTarget.x + (Math.random() - 0.5) * 6;
+      newP.y = refTarget.y + (Math.random() - 0.5) * 6;
+      newP.alpha = 0;
+      newP.targetAlpha = 0;
+      newP.baseAlpha = 0;
+      this.particles.push(newP);
+      slotParticleIndices.push(this.particles.length - 1);
+    }
+
+    // 3. Separate particles into active (visible) vs dormant (already collapsed/faded)
+    const activeIndices: number[] = [];
+    const dormantIndices: number[] = [];
+    for (const idx of slotParticleIndices) {
+      if (this.particles[idx].targetAlpha > 0.05) {
+        activeIndices.push(idx);
+      } else {
+        dormantIndices.push(idx);
+      }
+    }
+
+    const assignedTargetSet = new Set<TargetPoint>();
+    const claimedParticleIndices = new Set<number>();
+
+    // Pass A: Pin overlapping points (sub-pixel match between old and new digit)
+    for (const pIdx of activeIndices) {
+      const p = this.particles[pIdx];
+      for (const target of slotTargets) {
+        if (!assignedTargetSet.has(target)) {
+          const dx = p.targetX - target.x;
+          const dy = p.targetY - target.y;
+          if (dx * dx + dy * dy < 12) {
+            assignedTargetSet.add(target);
+            claimedParticleIndices.add(pIdx);
+            p.targetX = target.x;
+            p.targetY = target.y;
+            p.finalTargetX = target.x;
+            p.finalTargetY = target.y;
+            p.targetAlpha = target.alpha;
+            p.baseAlpha = target.alpha;
+            p.baseRadius = 0.95;
+            break;
+          }
+        }
+      }
+    }
+
+    // Pass B: Match remaining targets to available particles (active prioritized over dormant)
+    const unassignedTargets = slotTargets.filter((t) => !assignedTargetSet.has(t));
+    const availableActive = activeIndices.filter((idx) => !claimedParticleIndices.has(idx));
+    const availableDormant = dormantIndices.filter((idx) => !claimedParticleIndices.has(idx));
+
+    for (const target of unassignedTargets) {
+      let bestIdx = -1;
+      let bestDistSq = Infinity;
+      let bestInActive = true;
+      let bestPos = -1;
+
+      // Check active particles first so visible particles flow directly into the new shape
+      for (let k = 0; k < availableActive.length; k++) {
+        const pIdx = availableActive[k];
+        const p = this.particles[pIdx];
+        const dx = p.x - target.x;
+        const dy = p.y - target.y;
+        const distSq = dx * dx + dy * dy;
+
+        if (distSq < bestDistSq) {
+          bestDistSq = distSq;
+          bestIdx = pIdx;
+          bestInActive = true;
+          bestPos = k;
+        }
+      }
+
+      // If needed, check dormant particles
+      if (bestIdx === -1) {
+        for (let k = 0; k < availableDormant.length; k++) {
+          const pIdx = availableDormant[k];
+          const p = this.particles[pIdx];
+          const dx = p.x - target.x;
+          const dy = p.y - target.y;
+          const distSq = dx * dx + dy * dy;
+
+          if (distSq < bestDistSq) {
+            bestDistSq = distSq;
+            bestIdx = pIdx;
+            bestInActive = false;
+            bestPos = k;
+          }
+        }
+      }
+
+      if (bestIdx !== -1) {
+        const p = this.particles[bestIdx];
+        p.targetX = target.x;
+        p.targetY = target.y;
+        p.finalTargetX = target.x;
+        p.finalTargetY = target.y;
+        p.targetAlpha = target.alpha;
+        p.baseAlpha = target.alpha;
+        p.baseRadius = 0.95;
+        claimedParticleIndices.add(bestIdx);
+
+        if (bestInActive) {
+          availableActive.splice(bestPos, 1);
+        } else {
+          availableDormant.splice(bestPos, 1);
+        }
+      }
+    }
+
+    // Pass C: SURPLUS PARTICLES COLLAPSE & MELT INTO NEW DIGIT
+    // All surplus particles (e.g. 0 -> 1 where 0 has ~110 and 1 has ~40)
+    // are pulled into the NEAREST point on the new digit while targetAlpha drops to 0.
+    // The entire loop of 0 gracefully collapses inward into 1, completely vanishing
+    // without leaving a hollow static outline!
+    const surplusIndices = slotParticleIndices.filter((idx) => !claimedParticleIndices.has(idx));
+    for (const pIdx of surplusIndices) {
+      const p = this.particles[pIdx];
+      let closestTarget = slotTargets[0];
+      let minDistSq = Infinity;
+      for (const t of slotTargets) {
+        const dx = p.x - t.x;
+        const dy = p.y - t.y;
+        const distSq = dx * dx + dy * dy;
+        if (distSq < minDistSq) {
+          minDistSq = distSq;
+          closestTarget = t;
+        }
+      }
+
+      if (closestTarget) {
+        p.targetX = closestTarget.x;
+        p.targetY = closestTarget.y;
+        p.finalTargetX = closestTarget.x;
+        p.finalTargetY = closestTarget.y;
+      }
+      p.targetAlpha = 0;
+      p.baseAlpha = 0;
+    }
+  }
+
+  /**
    * Assign coordinates using stable matching. Stationary digits remain frozen,
-   * while new points pull the nearest available particles.
+   * while changing digits or seconds smoothly morph locally without shifting ambient or distant particles.
    */
   private updateTimeTargets(force = false): void {
     if (this.sentinelState !== 'dormant' && this.sentinelState !== 'transitioning_out') {
       return;
     }
 
-    const now = new Date();
-    const currentSec = now.getSeconds();
+    const { main, sec } = this.getTimeString();
+    const mainChanged = force || main !== this.lastMainString;
+    const secChanged = this.showSeconds && (force || sec !== this.lastSecString);
 
-    if (!force && this.showSeconds && currentSec === this.lastSecond) {
+    if (!mainChanged && !secChanged) {
       return;
     }
-    if (!force && !this.showSeconds && this.lastTimeString.length > 0) {
-      const { main } = this.getTimeString();
-      if (main === this.lastTimeString) return;
-    }
-
-    this.lastSecond = currentSec;
-    const targets = this.sampleTargetPoints();
-    if (targets.length === 0) return;
 
     const keyOf = (x: number, y: number) => `${Math.round(x)},${Math.round(y)}`;
+
+    // CASE 1: ONLY the seconds digit changed (e.g. 20 -> 21).
+    // Main digits ('HH:MM') and ambient particles are 100% FROZEN and NEVER touched!
+    if (!mainChanged && secChanged) {
+      const prevSec = this.lastSecString;
+      this.lastSecString = sec;
+
+      const allTargets = this.sampleTargetPoints();
+      const tensChanged = force || prevSec.length < 2 || prevSec[0] !== sec[0];
+      const onesChanged = force || prevSec.length < 2 || prevSec[1] !== sec[1];
+
+      if (tensChanged) {
+        const slot0Targets = allTargets.filter((t) => t.isSeconds && t.secSlot === 0);
+        this.morphSecondsSlot(0, slot0Targets);
+      }
+
+      if (onesChanged) {
+        const slot1Targets = allTargets.filter((t) => t.isSeconds && t.secSlot === 1);
+        this.morphSecondsSlot(1, slot1Targets);
+      }
+
+      return;
+    }
+
+    // CASE 2: Main time string changed (e.g. minute roll 09:46 -> 09:47) or force initial render.
+    this.lastMainString = main;
+    this.lastSecString = sec;
+
+    const targets = this.sampleTargetPoints();
+    if (targets.length === 0) return;
 
     const targetMap = new Map<string, TargetPoint>();
     targets.forEach((t) => {
@@ -738,12 +941,13 @@ export class ParticleClock {
         p.targetAlpha = target.alpha;
         p.baseAlpha = target.alpha;
         p.isSeconds = target.isSeconds;
+        p.secSlot = target.secSlot;
         p.isAmbient = false;
         p.baseRadius = target.isSeconds ? 0.95 : 1.1;
       }
     }
 
-    // Pass 2: Unclaimed targets (dots for changed digits)
+    // Pass 2: Unclaimed targets
     const unclaimedTargets: TargetPoint[] = [];
     for (const t of targets) {
       const key = keyOf(t.x, t.y);
@@ -752,13 +956,21 @@ export class ParticleClock {
       }
     }
 
-    // Pass 3: Free particles pool
-    const freeParticleIndices: number[] = [];
+    // Pass 3: Free particles pool (prioritize non-ambient particles before ambient ones)
+    const freeNonAmbientIndices: number[] = [];
+    const freeAmbientIndices: number[] = [];
     for (let i = 0; i < this.particles.length; i++) {
       if (!claimedParticleIndices.has(i)) {
-        freeParticleIndices.push(i);
+        if (this.particles[i].isAmbient) {
+          freeAmbientIndices.push(i);
+        } else {
+          freeNonAmbientIndices.push(i);
+        }
       }
     }
+
+    // Use non-ambient free particles first to avoid disturbing ambient field
+    const freeParticleIndices = [...freeNonAmbientIndices, ...freeAmbientIndices];
 
     // Ensure particle pool has enough elements for all targets + ambient field
     while (freeParticleIndices.length < unclaimedTargets.length + this.ambientCount) {
@@ -801,6 +1013,7 @@ export class ParticleClock {
         p.targetAlpha = target.alpha;
         p.baseAlpha = target.alpha;
         p.isSeconds = target.isSeconds;
+        p.secSlot = target.secSlot;
         p.isAmbient = false;
         p.baseRadius = target.isSeconds ? 0.95 : 1.1;
         claimedParticleIndices.add(bestIdx);
@@ -808,11 +1021,26 @@ export class ParticleClock {
       }
     }
 
-    // Pass 5: Surplus particles become floating ambient stardust across wide space
+    // Pre-seed dedicated pools for seconds slots so morphing has instant capacity
+    if (this.showSeconds) {
+      const center = this.getClockCenter();
+      for (const slot of [0, 1]) {
+        const slotCount = this.particles.filter((p) => p.isSeconds && p.secSlot === slot).length;
+        for (let k = slotCount; k < 125; k++) {
+          const newP = this.createParticle(center.x + 100, center.y, false, true, slot);
+          newP.alpha = 0;
+          newP.targetAlpha = 0;
+          newP.baseAlpha = 0;
+          this.particles.push(newP);
+        }
+      }
+    }
+
+    // Pass 5: Surplus particles become floating ambient stardust only if they weren't already ambient
     const center = this.getClockCenter();
     for (const pIdx of freeParticleIndices) {
       const p = this.particles[pIdx];
-      if (!p.isAmbient) {
+      if (!p.isAmbient && !p.isSeconds) {
         p.isAmbient = true;
         p.targetAlpha = 0.12 + Math.random() * 0.14;
         p.baseAlpha = p.targetAlpha;
@@ -838,11 +1066,15 @@ export class ParticleClock {
     const outerRadiusSq = outerRadius * outerRadius;
     const scatterRadiusSq = scatterRadius * scatterRadius;
 
-    const spring = 0.055;
-    const friction = 0.84;
+    const springMain = 0.055;
+    const frictionMain = 0.84;
+    const springSec = 0.038;
+    const frictionSec = 0.865;
 
     for (let i = 0; i < this.particles.length; i++) {
       const p = this.particles[i];
+      const spring = p.isSeconds ? springSec : springMain;
+      const friction = p.isSeconds ? frictionSec : frictionMain;
 
       // Organic idle breathing / harmonic micro-drift
       p.idlePhaseX += p.idleSpeed;
@@ -924,22 +1156,30 @@ export class ParticleClock {
 
       // Dynamic Luminance & Size (check squared speed to eliminate Math.sqrt)
       const speedSq = p.vx * p.vx + p.vy * p.vy;
-      if (isDisturbed || speedSq > 1.44) {
+      if (isDisturbed) {
+        // Direct cursor disturbance causes flare
         p.radius += (p.baseRadius * 1.3 - p.radius) * 0.15;
         p.alpha += (Math.min(1.0, p.baseAlpha + 0.35) - p.alpha) * 0.15;
+      } else if (!p.isSeconds && speedSq > 1.44) {
+        // Non-seconds particles can flare on speed
+        p.radius += (p.baseRadius * 1.25 - p.radius) * 0.12;
+        p.alpha += (Math.min(1.0, p.baseAlpha + 0.25) - p.alpha) * 0.12;
       } else {
+        // Smooth target alpha approach (seconds particles glide gently without flashing)
         p.radius += (p.baseRadius - p.radius) * 0.08;
-        p.alpha += (p.baseAlpha - p.alpha) * 0.08;
+        p.alpha += (p.targetAlpha - p.alpha) * (p.isSeconds ? 0.09 : 0.08);
       }
 
       // Damping & speed cap so particles never shoot across the screen or act weirdly
       p.vx *= friction;
       p.vy *= friction;
 
-      if (speedSq > 144) {
+      const maxSpeedSq = p.isSeconds ? 81 : 144;
+      if (speedSq > maxSpeedSq) {
         const curSpeed = Math.sqrt(speedSq);
-        p.vx = (p.vx / curSpeed) * 12;
-        p.vy = (p.vy / curSpeed) * 12;
+        const maxSpeed = p.isSeconds ? 9 : 12;
+        p.vx = (p.vx / curSpeed) * maxSpeed;
+        p.vy = (p.vy / curSpeed) * maxSpeed;
       }
 
       // Position update
@@ -953,8 +1193,7 @@ export class ParticleClock {
   }
 
   /**
-   * Batched Renderer: Reduces draw calls from 1,500+ down to 4 single calls per frame,
-   * completely eliminating canvas context state thrashing and string allocations.
+   * Batched Renderer: Reduces draw calls while rendering rich, smooth alpha gradations.
    */
   private render(): void {
     const ctx = this.ctx;
@@ -975,18 +1214,28 @@ export class ParticleClock {
     }
     ctx.fill();
 
-    // Batch 2: Seconds digits / subtle ring particles
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.68)';
-    ctx.beginPath();
-    for (let i = 0; i < len; i++) {
-      const p = this.particles[i];
-      if (!p.isAmbient && p.isSeconds && p.alpha <= 0.88 && p.alpha > 0.02) {
-        const r = Math.max(0.1, p.radius);
-        ctx.moveTo(p.x + r, p.y);
-        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+    // Batch 2: Seconds digits rendered in fine alpha tiers for buttery smooth continuous fading!
+    // Collapsing surplus particles (e.g. 0 -> 1) dissolve gracefully with zero pop-out,
+    // and emerging particles bloom naturally with smooth luminance!
+    for (let t = 0; t < SEC_ALPHA_TIERS.length; t++) {
+      const tier = SEC_ALPHA_TIERS[t];
+      let hasPoints = false;
+      ctx.beginPath();
+      for (let i = 0; i < len; i++) {
+        const p = this.particles[i];
+        if (!p.isAmbient && p.isSeconds && p.alpha >= tier.minAlpha && p.alpha < tier.maxAlpha) {
+          const scale = Math.max(0.3, Math.min(1.0, p.alpha / 0.42));
+          const r = Math.max(0.1, p.radius * scale);
+          ctx.moveTo(p.x + r, p.y);
+          ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+          hasPoints = true;
+        }
+      }
+      if (hasPoints) {
+        ctx.fillStyle = tier.style;
+        ctx.fill();
       }
     }
-    ctx.fill();
 
     // Batch 3: Main clock digits & Sentinel core/ring
     ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
@@ -1006,7 +1255,7 @@ export class ParticleClock {
     ctx.beginPath();
     for (let i = 0; i < len; i++) {
       const p = this.particles[i];
-      if (!p.isAmbient && p.alpha > (p.isSeconds ? 0.88 : 0.98)) {
+      if (!p.isAmbient && !p.isSeconds && p.alpha > 0.98) {
         const r = Math.max(0.1, p.radius);
         ctx.moveTo(p.x + r, p.y);
         ctx.arc(p.x, p.y, r, 0, Math.PI * 2);

@@ -41,7 +41,7 @@ A minimalist, monochromatic browser New Tab extension designed like a developer 
 | <kbd>Ctrl N</kbd> | Add new favorite dialog |
 | <kbd>T</kbd> | Toggle 12-hour / 24-hour time format |
 | <kbd>S</kbd> | Toggle seconds display |
-| <kbd>B</kbd> | Toggle favorites sidebar rail |
+| <kbd>Ctrl B</kbd> | Toggle favorites sidebar rail |
 | <kbd>?</kbd> | Open shortcuts reference cheat sheet |
 
 ---

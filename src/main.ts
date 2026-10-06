@@ -743,6 +743,16 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
+    // Ctrl+B or Cmd+B -> Toggle Sidebar
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') {
+      const isInModal = sentinelModal?.classList.contains('open') || favModal?.classList.contains('open') || shortcutsModal?.classList.contains('open');
+      if (!isInModal) {
+        e.preventDefault();
+        toggleSidebar();
+        return;
+      }
+    }
+
     // Escape handling
     if (e.key === 'Escape') {
       if (sentinelModal && sentinelModal.classList.contains('open')) {
@@ -798,13 +808,6 @@ document.addEventListener('DOMContentLoaded', () => {
       if (e.key.toLowerCase() === 's') {
         e.preventDefault();
         toggleSecondsDisplay();
-        return;
-      }
-
-      // 'B' to toggle sidebar
-      if (e.key.toLowerCase() === 'b') {
-        e.preventDefault();
-        toggleSidebar();
         return;
       }
 
