@@ -46,6 +46,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Sentinel Elements
   const appEl = document.getElementById('app') as HTMLElement;
   const clockContainer = document.getElementById('clock-container') as HTMLElement | null;
+  const sentinelStatusContainer = document.getElementById('sentinel-status-container') as HTMLElement | null;
   const sentinelPromptText = document.getElementById('sentinel-prompt-text') as HTMLElement | null;
   const sentinelConfigureBtn = document.getElementById('sentinel-configure-btn') as HTMLButtonElement | null;
   const sentinelConfigStatusLabel = document.getElementById('sentinel-config-status-label') as HTMLElement | null;
@@ -395,8 +396,17 @@ document.addEventListener('DOMContentLoaded', () => {
     if (sentinelResponseContainer) {
       sentinelResponseContainer.classList.remove('visible');
     }
+    if (sentinelStatusContainer) {
+      sentinelStatusContainer.style.display = '';
+    }
     if (sentinelPromptText) {
       sentinelPromptText.textContent = 'What do you require?';
+    }
+    if (sentinelQueryEcho) {
+      sentinelQueryEcho.textContent = '';
+    }
+    if (sentinelAnswerText) {
+      sentinelAnswerText.textContent = '';
     }
   };
 
@@ -427,8 +437,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // Handle Sentinel input query submission
   search.onSentinelSubmit = async (query) => {
     clock.setSentinelThinking(true);
+    if (sentinelStatusContainer) {
+      sentinelStatusContainer.style.display = 'none';
+    }
     if (sentinelPromptText) {
-      sentinelPromptText.textContent = 'thinking';
+      sentinelPromptText.textContent = '';
     }
     if (sentinelResponseContainer) {
       sentinelResponseContainer.classList.add('visible');
@@ -437,16 +450,18 @@ document.addEventListener('DOMContentLoaded', () => {
       sentinelQueryEcho.textContent = query;
     }
     if (sentinelAnswerText) {
-      sentinelAnswerText.textContent = '';
+      sentinelAnswerText.innerHTML = `
+        <div class="sentinel-thinking-indicator">
+          <span class="thinking-spinner"></span>
+          <span class="thinking-label">Thinking...</span>
+        </div>
+      `;
     }
     search.clear();
 
     const result = await sentinel.query(query);
 
     clock.setSentinelThinking(false);
-    if (sentinelPromptText) {
-      sentinelPromptText.textContent = '';
-    }
     if (sentinelAnswerText) {
       sentinelAnswerText.innerHTML = formatSentinelMarkdown(result.text);
     }

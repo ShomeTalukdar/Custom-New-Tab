@@ -440,9 +440,8 @@ export class ParticleClock {
    * Front and center with full luminous monochrome intensity!
    */
   private sampleSentinelPoints(): TargetPoint[] {
-    const center = this.getClockCenter();
-    const cx = this.sentinelCenterX || center.x;
-    const cy = this.sentinelCenterY || center.y;
+    const cx = this.sentinelCenterX;
+    const cy = this.sentinelCenterY;
     const points: TargetPoint[] = [];
 
     // 1. Center Core (the ● dot inside ◉) - large, dense, radiant
@@ -460,21 +459,21 @@ export class ParticleClock {
       });
     }
 
-    // Inner ring 2 - radius 16px (18 particles)
+    // Inner ring 2 - radius 15px (18 particles)
     const core2Count = 18;
     for (let i = 0; i < core2Count; i++) {
       const theta = (i * Math.PI * 2) / core2Count + this.sentinelRingAngle * 0.5;
       points.push({
-        x: cx + Math.cos(theta) * 16,
-        y: cy + Math.sin(theta) * 16,
+        x: cx + Math.cos(theta) * 15,
+        y: cy + Math.sin(theta) * 15,
         alpha: 0.98,
         isSeconds: false,
       });
     }
 
-    // 2. Primary Majestic Ring (the ○ ring of ◉) - radius ~48px (56 particles)
-    const ringPoints = 56;
-    const ringRadius = 48;
+    // 2. Primary Ring (the ○ ring of ◉) - radius ~42px (52 particles)
+    const ringPoints = 52;
+    const ringRadius = 42;
     for (let i = 0; i < ringPoints; i++) {
       const theta = (i * Math.PI * 2) / ringPoints + this.sentinelRingAngle;
       points.push({
@@ -485,9 +484,9 @@ export class ParticleClock {
       });
     }
 
-    // 3. Counter-rotating Harmonic Iris - radius ~76px (44 particles)
-    const haloPoints = 44;
-    const haloRadius = 76;
+    // 3. Counter-rotating Harmonic Iris - radius ~64px (40 particles)
+    const haloPoints = 40;
+    const haloRadius = 64;
     for (let i = 0; i < haloPoints; i++) {
       const theta = (i * Math.PI * 2) / haloPoints - this.sentinelRingAngle * 0.7;
       points.push({
@@ -498,9 +497,9 @@ export class ParticleClock {
       });
     }
 
-    // 4. Outer Ethereal Iris Shell - radius ~106px (36 particles)
-    const outerHaloPoints = 36;
-    const outerRadius = 106;
+    // 4. Outer Ethereal Iris Shell - radius ~84px (32 particles)
+    const outerHaloPoints = 32;
+    const outerRadius = 84;
     for (let i = 0; i < outerHaloPoints; i++) {
       const theta = (i * Math.PI * 2) / outerHaloPoints + this.sentinelRingAngle * 0.35;
       points.push({
@@ -518,10 +517,18 @@ export class ParticleClock {
    * Reorganize particle targets into the Sentinel indicator formation.
    */
   private updateSentinelTargets(): void {
-    const targets = this.sampleSentinelPoints();
     const center = this.getClockCenter();
-    const cx = this.sentinelCenterX || center.x;
-    const cy = this.sentinelCenterY || center.y;
+    if (this.sentinelCenterX === 0 && this.sentinelCenterY === 0) {
+      this.sentinelCenterX = center.x;
+      this.sentinelCenterY = center.y;
+    } else {
+      this.sentinelCenterX += (center.x - this.sentinelCenterX) * 0.25;
+      this.sentinelCenterY += (center.y - this.sentinelCenterY) * 0.25;
+    }
+
+    const cx = this.sentinelCenterX;
+    const cy = this.sentinelCenterY;
+    const targets = this.sampleSentinelPoints();
 
     const isTransitioning = this.sentinelState === 'transitioning_in';
     const progress = Math.min(1, Math.max(0, this.sentinelTransitionProgress));
@@ -548,7 +555,7 @@ export class ParticleClock {
         // Surplus particles form the majestic black hole accretion disk & quantum halo around Sentinel
         p.isAmbient = true;
         const orbitIndex = i - targets.length;
-        const orbitRadius = 35 + (orbitIndex % 110) * 1.5;
+        const orbitRadius = 26 + (orbitIndex % 70) * 1.3;
         const orbitSpeed = (0.0018 + (orbitIndex % 7) * 0.0008) * (orbitIndex % 2 === 0 ? 1 : -1);
         p.ambientCenterX = cx;
         p.ambientCenterY = cy;
@@ -849,9 +856,9 @@ export class ParticleClock {
       if (p.isAmbient) {
         p.ambientAngle += p.ambientSpeed;
         if (this.sentinelState !== 'dormant') {
-          // Black hole tilted accretion disk: sweeping cosmic dust streams
-          p.targetX = p.ambientCenterX + Math.cos(p.ambientAngle) * p.ambientRadius;
-          p.targetY = p.ambientCenterY + Math.sin(p.ambientAngle * 0.75) * (p.ambientRadius * 0.45);
+          // Black hole tilted accretion disk: sweeping cosmic dust streams tracking Sentinel center
+          p.targetX = this.sentinelCenterX + Math.cos(p.ambientAngle) * p.ambientRadius;
+          p.targetY = this.sentinelCenterY + Math.sin(p.ambientAngle * 0.75) * (p.ambientRadius * 0.40);
         } else {
           // Normal clock ambient mode: serene wide cosmic drift
           p.targetX = p.ambientCenterX + Math.cos(p.ambientAngle) * p.ambientRadius;
