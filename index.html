@@ -82,9 +82,9 @@
           <form id="search-form" action="https://www.google.com/search" method="GET">
             <div id="search-container">
               <span class="search-icon" aria-hidden="true">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="11" cy="11" r="8"></circle>
-                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
                 </svg>
               </span>
               <input
@@ -108,8 +108,35 @@
                   <line x1="6" y1="6" x2="18" y2="18"></line>
                 </svg>
               </button>
-              <div id="search-kbd-hint" class="search-kbd">
-                <kbd id="kbd-meta">⌘</kbd><kbd>K</kbd>
+              <button
+                type="button"
+                id="search-ai-btn"
+                class="search-ai-btn"
+                title="Toggle Sentinel AI Mode (Ctrl+A)"
+                aria-label="Toggle Sentinel AI Mode"
+              >
+                <span class="ai-symbol-wrapper" aria-hidden="true">
+                  <svg class="ai-spark-icon" width="14" height="14" viewBox="0 0 24 24" fill="none">
+                    <path d="M12 2C12 7.52 7.52 12 2 12C7.52 12 12 16.48 12 22C12 16.48 16.48 12 22 12C16.48 12 12 7.52 12 2Z" fill="url(#ai-sparkle-grad)" />
+                    <circle cx="19" cy="5" r="2.2" fill="url(#ai-sparkle-grad)" />
+                    <defs>
+                      <linearGradient id="ai-sparkle-grad" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+                        <stop offset="0%" stop-color="#ffffff"/>
+                        <stop offset="100%" stop-color="#b0b0b0"/>
+                      </linearGradient>
+                    </defs>
+                  </svg>
+                </span>
+                <span class="ai-label">AI</span>
+              </button>
+              <div id="search-kbd-hint" class="search-kbd"></div>
+
+              <!-- Live Autocomplete & History Suggestions -->
+              <div id="search-suggestions" class="search-suggestions" role="listbox" aria-label="Search suggestions">
+                <ul id="suggestions-list" class="suggestions-list"></ul>
+                <div class="suggestions-footer">
+                  <span class="suggestions-report">Report inappropriate predictions</span>
+                </div>
               </div>
             </div>
           </form>
@@ -118,15 +145,6 @@
 
       <!-- Discreet Top-Right Utilities Toolbar -->
       <header id="top-toolbar">
-        <button
-          id="btn-open-sentinel-settings"
-          class="toolbar-btn sentinel-tb-btn"
-          title="Sentinel AI Settings"
-          aria-label="Sentinel AI Settings"
-        >
-          <span class="sentinel-tb-dot">●</span>
-          <span>AI</span>
-        </button>
 
         <button
           id="btn-toggle-format"

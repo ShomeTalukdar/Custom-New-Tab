@@ -8,6 +8,7 @@
 export interface ClockOptions {
   is24Hour: boolean;
   showSeconds: boolean;
+  anchorElement?: HTMLElement;
   onFpsUpdate?: (fps: number) => void;
   onParticleCountUpdate?: (count: number) => void;
 }
@@ -58,6 +59,7 @@ export class ParticleClock {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private container: HTMLElement;
+  private anchorElement?: HTMLElement;
   private offscreenCanvas: HTMLCanvasElement;
   private offscreenCtx: CanvasRenderingContext2D;
 
@@ -117,6 +119,7 @@ export class ParticleClock {
     }
     this.ctx = ctx;
     this.container = canvas.parentElement || document.body;
+    this.anchorElement = options.anchorElement || canvas.parentElement || undefined;
 
     this.offscreenCanvas = document.createElement('canvas');
     const offCtx = this.offscreenCanvas.getContext('2d', { willReadFrequently: true });
@@ -136,15 +139,25 @@ export class ParticleClock {
   }
 
   private initEvents(): void {
-    this.resizeObserver = new ResizeObserver(() => {
+    window.addEventListener('resize', () => {
       this.handleResize();
     });
-    this.resizeObserver.observe(this.container);
+
+    if (this.anchorElement) {
+      this.resizeObserver = new ResizeObserver(() => {
+        this.handleResize();
+      });
+      this.resizeObserver.observe(this.anchorElement);
+    } else {
+      this.resizeObserver = new ResizeObserver(() => {
+        this.handleResize();
+      });
+      this.resizeObserver.observe(this.container);
+    }
 
     window.addEventListener('mousemove', (e: MouseEvent) => {
-      const rect = this.canvas.getBoundingClientRect();
-      const newX = e.clientX - rect.left;
-      const newY = e.clientY - rect.top;
+      const newX = e.clientX;
+      const newY = e.clientY;
 
       if (this.mouse.lastX !== -9999) {
         this.mouse.vx = newX - this.mouse.lastX;
@@ -154,9 +167,7 @@ export class ParticleClock {
       this.mouse.lastY = newY;
       this.mouse.x = newX;
       this.mouse.y = newY;
-
-      this.mouse.isHovering =
-        newX >= -80 && newX <= this.width + 80 && newY >= -80 && newY <= this.height + 80;
+      this.mouse.isHovering = true;
     });
 
     window.addEventListener('mouseleave', () => {
@@ -226,17 +237,25 @@ export class ParticleClock {
 
   public activateSentinel(targetX?: number, targetY?: number): void {
     if (this.sentinelState === 'active' || this.sentinelState === 'thinking' || this.sentinelState === 'transitioning_in') return;
-    this.sentinelCenterX = targetX !== undefined ? targetX : Math.floor(this.width / 2);
-    this.sentinelCenterY = targetY !== undefined ? targetY : Math.floor(this.height * 0.46);
+    const center = this.getClockCenter();
+    this.sentinelCenterX = targetX !== undefined ? targetX : center.x;
+    this.sentinelCenterY = targetY !== undefined ? targetY : center.y;
 
     this.sentinelState = 'transitioning_in';
     this.sentinelTransitionProgress = 0;
     this.sentinelRingAngle = 0;
 
+    const targets = this.sampleSentinelPoints();
     for (let i = 0; i < this.particles.length; i++) {
       const p = this.particles[i];
       p.originX = p.x;
       p.originY = p.y;
+      p.vx *= 0.25;
+      p.vy *= 0.25;
+      if (i >= targets.length) {
+        const orbitIndex = i - targets.length;
+        p.ambientAngle = (orbitIndex * 137.5 * Math.PI) / 180;
+      }
     }
 
     this.updateSentinelTargets();
@@ -248,13 +267,42 @@ export class ParticleClock {
     this.sentinelTransitionProgress = 0;
     this.isSentinelThinking = false;
 
+    const targets = this.sampleTargetPoints();
+    const cx = this.sentinelCenterX || Math.floor(this.width / 2);
+    const cy = this.sentinelCenterY || Math.floor(this.height * 0.46);
+
     for (let i = 0; i < this.particles.length; i++) {
       const p = this.particles[i];
       p.originX = p.x;
       p.originY = p.y;
-    }
+      p.vx = 0;
+      p.vy = 0;
 
-    this.updateTimeTargets(true);
+      if (i < targets.length) {
+        // Map directly into the clock digit points
+        const t = targets[i];
+        p.finalTargetX = t.x;
+        p.finalTargetY = t.y;
+        p.targetAlpha = t.alpha;
+        p.baseAlpha = t.alpha;
+        p.isSeconds = t.isSeconds;
+        p.isAmbient = false;
+        p.baseRadius = t.isSeconds ? 0.95 : 1.1;
+      } else {
+        // Surplus particles disperse smoothly into wide ambient cosmic stardust (identical to initial launch)
+        p.finalTargetX = cx + (Math.random() - 0.5) * (this.width * 0.75);
+        p.finalTargetY = cy + (Math.random() - 0.5) * (this.height * 0.75);
+        p.ambientCenterX = p.finalTargetX;
+        p.ambientCenterY = p.finalTargetY;
+        p.ambientRadius = 40 + Math.random() * (this.width * 0.35);
+        p.ambientAngle = Math.random() * Math.PI * 2;
+        p.ambientSpeed = 0.0015 + Math.random() * 0.003;
+        p.targetAlpha = 0.12 + Math.random() * 0.14;
+        p.baseAlpha = p.targetAlpha;
+        p.baseRadius = 0.85;
+        p.isAmbient = true;
+      }
+    }
   }
 
   public setSentinelThinking(thinking: boolean): void {
@@ -268,10 +316,25 @@ export class ParticleClock {
     return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
   }
 
+  public getClockCenter(): { x: number; y: number } {
+    if (this.anchorElement) {
+      const rect = this.anchorElement.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        return {
+          x: Math.floor(rect.left + rect.width / 2),
+          y: Math.floor(rect.top + rect.height / 2),
+        };
+      }
+    }
+    return {
+      x: Math.floor(this.width / 2),
+      y: Math.floor(this.height * 0.44),
+    };
+  }
+
   private handleResize(): void {
-    const rect = this.container.getBoundingClientRect();
-    const newWidth = Math.max(Math.floor(rect.width), 300);
-    const newHeight = Math.max(Math.floor(rect.height), 140);
+    const newWidth = Math.max(window.innerWidth, 320);
+    const newHeight = Math.max(window.innerHeight, 240);
 
     // Only reconfigure context & dimensions if actual bounds changed
     const sizeChanged = newWidth !== this.width || newHeight !== this.height;
@@ -287,10 +350,16 @@ export class ParticleClock {
 
     this.canvas.width = Math.floor(this.width * this.dpr);
     this.canvas.height = Math.floor(this.height * this.dpr);
-    this.ctx.scale(this.dpr, this.dpr);
+    this.canvas.style.width = `${this.width}px`;
+    this.canvas.style.height = `${this.height}px`;
+    this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
 
-    this.mouse.radius = Math.min(Math.max(this.height * 0.75, 140), 200);
-    this.mouse.scatterRadius = Math.min(Math.max(this.height * 0.42, 75), 105);
+    this.mouse.radius = Math.min(Math.max(this.height * 0.75, 140), 220);
+    this.mouse.scatterRadius = Math.min(Math.max(this.height * 0.42, 75), 110);
+
+    const center = this.getClockCenter();
+    this.sentinelCenterX = center.x;
+    this.sentinelCenterY = center.y;
 
     if (this.sentinelState === 'dormant' || this.sentinelState === 'transitioning_out') {
       this.updateTimeTargets(true);
@@ -324,15 +393,16 @@ export class ParticleClock {
    * Helper to instantiate a silky magnetic dust particle with organic properties
    */
   private createParticle(x: number, y: number, isAmbient = true, isSeconds = false): Particle {
+    const center = this.getClockCenter();
     const angle = Math.random() * Math.PI * 2;
     const radius = 20 + Math.random() * (this.width * 0.48);
-    const cx = this.width / 2;
-    const cy = this.height / 2;
+    const cx = center.x;
+    const cy = center.y;
     const px = isAmbient ? cx + Math.cos(angle) * radius : x;
     const py = isAmbient ? cy + Math.sin(angle) * radius : y;
 
-    const baseRadius = isAmbient ? 0.8 : isSeconds ? 0.95 : 1.1;
-    const targetAlpha = isAmbient ? 0.08 + Math.random() * 0.12 : isSeconds ? 0.30 : 0.92;
+    const baseRadius = isAmbient ? 0.85 : isSeconds ? 0.95 : 1.1;
+    const targetAlpha = isAmbient ? 0.18 + Math.random() * 0.20 : isSeconds ? 0.35 : 0.95;
 
     return {
       x: px + (Math.random() - 0.5) * 30,
@@ -367,11 +437,12 @@ export class ParticleClock {
   /**
    * Sample geometric points forming the Sentinel indicator:
    * Concentric inner core (●), large primary ring (○), and orbital energy shells (◉).
-   * Big, front and center!
+   * Front and center with full luminous monochrome intensity!
    */
   private sampleSentinelPoints(): TargetPoint[] {
-    const cx = this.sentinelCenterX || Math.floor(this.width / 2);
-    const cy = this.sentinelCenterY || Math.floor(this.height * 0.46);
+    const center = this.getClockCenter();
+    const cx = this.sentinelCenterX || center.x;
+    const cy = this.sentinelCenterY || center.y;
     const points: TargetPoint[] = [];
 
     // 1. Center Core (the ● dot inside ◉) - large, dense, radiant
@@ -396,13 +467,12 @@ export class ParticleClock {
       points.push({
         x: cx + Math.cos(theta) * 16,
         y: cy + Math.sin(theta) * 16,
-        alpha: 0.95,
+        alpha: 0.98,
         isSeconds: false,
       });
     }
 
     // 2. Primary Majestic Ring (the ○ ring of ◉) - radius ~48px (56 particles)
-    // Big, front, and center!
     const ringPoints = 56;
     const ringRadius = 48;
     for (let i = 0; i < ringPoints; i++) {
@@ -410,7 +480,7 @@ export class ParticleClock {
       points.push({
         x: cx + Math.cos(theta) * ringRadius,
         y: cy + Math.sin(theta) * ringRadius,
-        alpha: 0.95,
+        alpha: 0.96,
         isSeconds: false,
       });
     }
@@ -423,7 +493,7 @@ export class ParticleClock {
       points.push({
         x: cx + Math.cos(theta) * haloRadius,
         y: cy + Math.sin(theta) * haloRadius,
-        alpha: 0.52,
+        alpha: 0.86,
         isSeconds: true,
       });
     }
@@ -436,7 +506,7 @@ export class ParticleClock {
       points.push({
         x: cx + Math.cos(theta) * outerRadius,
         y: cy + Math.sin(theta) * outerRadius,
-        alpha: 0.28,
+        alpha: 0.72,
         isSeconds: true,
       });
     }
@@ -449,8 +519,9 @@ export class ParticleClock {
    */
   private updateSentinelTargets(): void {
     const targets = this.sampleSentinelPoints();
-    const cx = this.sentinelCenterX || Math.floor(this.width / 2);
-    const cy = this.sentinelCenterY || Math.floor(this.height * 0.46);
+    const center = this.getClockCenter();
+    const cx = this.sentinelCenterX || center.x;
+    const cy = this.sentinelCenterY || center.y;
 
     const isTransitioning = this.sentinelState === 'transitioning_in';
     const progress = Math.min(1, Math.max(0, this.sentinelTransitionProgress));
@@ -474,7 +545,7 @@ export class ParticleClock {
         p.isAmbient = false;
         p.baseRadius = t.alpha > 0.9 ? 1.25 : 0.95;
       } else {
-        // Surplus particles form the sweeping quantum halo around Sentinel
+        // Surplus particles form the majestic black hole accretion disk & quantum halo around Sentinel
         p.isAmbient = true;
         const orbitIndex = i - targets.length;
         const orbitRadius = 35 + (orbitIndex % 110) * 1.5;
@@ -483,9 +554,9 @@ export class ParticleClock {
         p.ambientCenterY = cy;
         p.ambientRadius = orbitRadius;
         p.ambientSpeed = this.isSentinelThinking ? orbitSpeed * 2.8 : orbitSpeed;
-        p.targetAlpha = 0.06 + (orbitIndex % 8) * 0.016;
+        p.targetAlpha = 0.35 + (orbitIndex % 8) * 0.06;
         p.baseAlpha = p.targetAlpha;
-        p.baseRadius = 0.85;
+        p.baseRadius = 0.95;
       }
     }
 
@@ -503,22 +574,19 @@ export class ParticleClock {
     const { main, sec } = this.getTimeString();
     const timeKey = this.showSeconds ? `${main}:${sec}` : main;
 
-    const sampleWidth = Math.floor(this.width);
-    const sampleHeight = Math.floor(this.height);
+    // Use a dedicated bounding box for rendering clock typography
+    const canvasW = Math.min(Math.max(Math.floor(this.width), 320), 1000);
+    const canvasH = 220;
 
-    if (sampleWidth <= 0 || sampleHeight <= 0) return [];
-
-    this.offscreenCanvas.width = sampleWidth;
-    this.offscreenCanvas.height = sampleHeight;
+    this.offscreenCanvas.width = canvasW;
+    this.offscreenCanvas.height = canvasH;
     const offCtx = this.offscreenCtx;
 
-    offCtx.clearRect(0, 0, sampleWidth, sampleHeight);
+    offCtx.clearRect(0, 0, canvasW, canvasH);
 
-    // Dedicate center region of canvas to clock digits to align seamlessly with Sentinel
-    const clockAreaHeight = Math.min(sampleHeight * 0.75, 250);
     const baseFontSize = Math.min(
-      Math.floor(clockAreaHeight * 0.78),
-      Math.floor(sampleWidth / (this.showSeconds ? 6.5 : 4.6))
+      Math.floor(canvasH * 0.72),
+      Math.floor(canvasW / (this.showSeconds ? 6.5 : 4.6))
     );
     const secFontSize = Math.floor(baseFontSize * 0.44);
 
@@ -539,8 +607,8 @@ export class ParticleClock {
     }
 
     const totalWidth = mainWidth + secWidth;
-    const startX = Math.floor((sampleWidth - totalWidth) / 2);
-    const centerY = Math.floor(sampleHeight * 0.46);
+    const offscreenStartX = Math.floor((canvasW - totalWidth) / 2);
+    const offscreenCenterY = Math.floor(canvasH / 2);
 
     // Draw main digits ('HH:MM')
     offCtx.font = `600 ${baseFontSize}px 'Geist Mono', 'JetBrains Mono', monospace`;
@@ -548,14 +616,14 @@ export class ParticleClock {
 
     for (let c = 0; c < main.length; c++) {
       const char = main[c];
-      const slotX = startX + c * charWidth;
+      const slotX = offscreenStartX + c * charWidth;
       const w = offCtx.measureText(char).width;
       const offsetX = (charWidth - w) / 2;
-      offCtx.fillText(char, Math.round(slotX + offsetX), centerY);
+      offCtx.fillText(char, Math.round(slotX + offsetX), offscreenCenterY);
     }
 
     // Draw optional seconds ('SS')
-    const secStartX = startX + mainWidth + secCharWidth;
+    const secStartX = offscreenStartX + mainWidth + secCharWidth;
     if (this.showSeconds) {
       offCtx.font = `500 ${secFontSize}px 'Geist Mono', 'JetBrains Mono', monospace`;
       offCtx.fillStyle = 'rgba(255, 255, 255, 0.4)';
@@ -565,30 +633,37 @@ export class ParticleClock {
         const slotX = secStartX + c * secCharWidth;
         const w = offCtx.measureText(char).width;
         const offsetX = (secCharWidth - w) / 2;
-        offCtx.fillText(char, Math.round(slotX + offsetX), centerY + Math.floor(baseFontSize * 0.12));
+        offCtx.fillText(char, Math.round(slotX + offsetX), offscreenCenterY + Math.floor(baseFontSize * 0.12));
       }
     }
 
-    const imgData = offCtx.getImageData(0, 0, sampleWidth, sampleHeight);
+    const imgData = offCtx.getImageData(0, 0, canvasW, canvasH);
     const data = imgData.data;
+    const stride = imgData.width;
     const points: TargetPoint[] = [];
 
-    // Optimal sampling step: 3.1px provides dense coverage while running at buttery 60 FPS
-    const step = sampleWidth < 500 ? 2.9 : 3.2;
+    const center = this.getClockCenter();
+    const globalOriginX = Math.floor(center.x - canvasW / 2);
+    const globalOriginY = Math.floor(center.y - canvasH / 2);
 
-    for (let y = 0; y < sampleHeight; y += step) {
+    // Optimal sampling step: 3.1px provides dense coverage while running at buttery 60 FPS
+    const step = 3.2;
+
+    for (let y = 0; y < canvasH; y += step) {
       const iy = Math.floor(y);
-      for (let x = 0; x < sampleWidth; x += step) {
+      for (let x = 0; x < canvasW; x += step) {
         const ix = Math.floor(x);
-        const index = (iy * sampleWidth + ix) * 4;
+        const index = (iy * stride + ix) * 4;
         const alpha = data[index + 3];
 
         if (alpha > 65) {
+          const globalX = globalOriginX + ix;
+          const globalY = globalOriginY + iy;
           const isSec = this.showSeconds && ix >= secStartX - 2;
           points.push({
-            x: ix,
-            y: iy,
-            alpha: isSec ? 0.30 : 0.92,
+            x: globalX,
+            y: globalY,
+            alpha: isSec ? 0.35 : 0.95,
             isSeconds: isSec,
           });
         }
@@ -726,17 +801,18 @@ export class ParticleClock {
       }
     }
 
-    // Pass 5: Surplus particles become floating ambient stardust
+    // Pass 5: Surplus particles become floating ambient stardust across wide space
+    const center = this.getClockCenter();
     for (const pIdx of freeParticleIndices) {
       const p = this.particles[pIdx];
       if (!p.isAmbient) {
         p.isAmbient = true;
-        p.targetAlpha = 0.08 + Math.random() * 0.12;
+        p.targetAlpha = 0.12 + Math.random() * 0.14;
         p.baseAlpha = p.targetAlpha;
-        p.baseRadius = 0.8;
-        p.ambientCenterX = p.x;
-        p.ambientCenterY = p.y;
-        p.ambientRadius = 30 + Math.random() * 80;
+        p.baseRadius = 0.85;
+        p.ambientCenterX = center.x + (Math.random() - 0.5) * (this.width * 0.75);
+        p.ambientCenterY = center.y + (Math.random() - 0.5) * (this.height * 0.75);
+        p.ambientRadius = 40 + Math.random() * (this.width * 0.35);
       }
     }
 
@@ -755,8 +831,8 @@ export class ParticleClock {
     const outerRadiusSq = outerRadius * outerRadius;
     const scatterRadiusSq = scatterRadius * scatterRadius;
 
-    const spring = 0.046;
-    const friction = 0.87;
+    const spring = 0.055;
+    const friction = 0.84;
 
     for (let i = 0; i < this.particles.length; i++) {
       const p = this.particles[i];
@@ -772,8 +848,15 @@ export class ParticleClock {
 
       if (p.isAmbient) {
         p.ambientAngle += p.ambientSpeed;
-        p.targetX = p.ambientCenterX + Math.cos(p.ambientAngle) * p.ambientRadius;
-        p.targetY = p.ambientCenterY + Math.sin(p.ambientAngle * 0.75) * (p.ambientRadius * 0.45);
+        if (this.sentinelState !== 'dormant') {
+          // Black hole tilted accretion disk: sweeping cosmic dust streams
+          p.targetX = p.ambientCenterX + Math.cos(p.ambientAngle) * p.ambientRadius;
+          p.targetY = p.ambientCenterY + Math.sin(p.ambientAngle * 0.75) * (p.ambientRadius * 0.45);
+        } else {
+          // Normal clock ambient mode: serene wide cosmic drift
+          p.targetX = p.ambientCenterX + Math.cos(p.ambientAngle) * p.ambientRadius;
+          p.targetY = p.ambientCenterY + Math.sin(p.ambientAngle) * (p.ambientRadius * 0.65);
+        }
         effectiveTargetX = p.targetX;
         effectiveTargetY = p.targetY;
       }
@@ -784,7 +867,7 @@ export class ParticleClock {
       p.vx += dx * spring;
       p.vy += dy * spring;
 
-      // Inward / outward organic swirl during Sentinel transition
+      // Gentle, elegant swirl during Sentinel transition
       if (this.sentinelState === 'transitioning_in' || this.sentinelState === 'transitioning_out') {
         const cx = this.sentinelCenterX || Math.floor(this.width / 2);
         const cy = this.sentinelCenterY || Math.floor(this.height * 0.46);
@@ -792,9 +875,9 @@ export class ParticleClock {
         const toCy = cy - p.y;
         const dist = Math.hypot(toCx, toCy);
 
-        if (dist > 8) {
+        if (dist > 12) {
           const progress = Math.min(1, Math.max(0, this.sentinelTransitionProgress));
-          const swirlMag = this.sentinelState === 'transitioning_in' ? 1.4 : -0.7;
+          const swirlMag = this.sentinelState === 'transitioning_in' ? 0.22 : -0.12;
           const swirl = Math.sin(progress * Math.PI) * swirlMag;
           const normalX = toCx / dist;
           const normalY = toCy / dist;
@@ -842,9 +925,15 @@ export class ParticleClock {
         p.alpha += (p.baseAlpha - p.alpha) * 0.08;
       }
 
-      // Damping
+      // Damping & speed cap so particles never shoot across the screen or act weirdly
       p.vx *= friction;
       p.vy *= friction;
+
+      if (speedSq > 144) {
+        const curSpeed = Math.sqrt(speedSq);
+        p.vx = (p.vx / curSpeed) * 12;
+        p.vy = (p.vy / curSpeed) * 12;
+      }
 
       // Position update
       p.x += p.vx;
@@ -867,7 +956,7 @@ export class ParticleClock {
     const len = this.particles.length;
 
     // Batch 1: Ambient stardust & Sentinel aura
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.14)';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.42)';
     ctx.beginPath();
     for (let i = 0; i < len; i++) {
       const p = this.particles[i];
@@ -880,11 +969,11 @@ export class ParticleClock {
     ctx.fill();
 
     // Batch 2: Seconds digits / subtle ring particles
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.32)';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.68)';
     ctx.beginPath();
     for (let i = 0; i < len; i++) {
       const p = this.particles[i];
-      if (!p.isAmbient && p.isSeconds && p.alpha <= 0.55 && p.alpha > 0.02) {
+      if (!p.isAmbient && p.isSeconds && p.alpha <= 0.88 && p.alpha > 0.02) {
         const r = Math.max(0.1, p.radius);
         ctx.moveTo(p.x + r, p.y);
         ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
@@ -893,11 +982,11 @@ export class ParticleClock {
     ctx.fill();
 
     // Batch 3: Main clock digits & Sentinel core/ring
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
     ctx.beginPath();
     for (let i = 0; i < len; i++) {
       const p = this.particles[i];
-      if (!p.isAmbient && !p.isSeconds && p.alpha <= 0.96 && p.alpha > 0.02) {
+      if (!p.isAmbient && !p.isSeconds && p.alpha <= 0.98 && p.alpha > 0.02) {
         const r = Math.max(0.1, p.radius);
         ctx.moveTo(p.x + r, p.y);
         ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
@@ -910,7 +999,7 @@ export class ParticleClock {
     ctx.beginPath();
     for (let i = 0; i < len; i++) {
       const p = this.particles[i];
-      if (!p.isAmbient && p.alpha > (p.isSeconds ? 0.55 : 0.96)) {
+      if (!p.isAmbient && p.alpha > (p.isSeconds ? 0.88 : 0.98)) {
         const r = Math.max(0.1, p.radius);
         ctx.moveTo(p.x + r, p.y);
         ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
@@ -934,16 +1023,14 @@ export class ParticleClock {
         this.sentinelRingAngle += this.sentinelState === 'thinking' ? 0.045 : 0.01;
         this.updateSentinelTargets();
       } else if (this.sentinelState === 'transitioning_out') {
-        this.sentinelTransitionProgress += 0.018; // ~0.9 second smooth return
+        this.sentinelTransitionProgress += 0.022; // ~0.75 second smooth return
         const progress = Math.min(1, this.sentinelTransitionProgress);
         const ease = this.easeInOutCubic(progress);
 
         for (let i = 0; i < this.particles.length; i++) {
           const p = this.particles[i];
-          if (!p.isAmbient) {
-            p.targetX = p.originX + (p.finalTargetX - p.originX) * ease;
-            p.targetY = p.originY + (p.finalTargetY - p.originY) * ease;
-          }
+          p.targetX = p.originX + (p.finalTargetX - p.originX) * ease;
+          p.targetY = p.originY + (p.finalTargetY - p.originY) * ease;
         }
 
         if (this.sentinelTransitionProgress >= 1) {
@@ -951,10 +1038,8 @@ export class ParticleClock {
           // Ensure every particle locks cleanly into its final clock target
           for (let i = 0; i < this.particles.length; i++) {
             const p = this.particles[i];
-            if (!p.isAmbient) {
-              p.targetX = p.finalTargetX;
-              p.targetY = p.finalTargetY;
-            }
+            p.targetX = p.finalTargetX;
+            p.targetY = p.finalTargetY;
           }
           // Force synchronize clock targets to current time
           this.updateTimeTargets(true);

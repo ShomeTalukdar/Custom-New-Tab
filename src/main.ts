@@ -52,7 +52,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const sentinelResponseContainer = document.getElementById('sentinel-response-container') as HTMLElement;
   const sentinelQueryEcho = document.getElementById('sentinel-query-echo') as HTMLElement;
   const sentinelAnswerText = document.getElementById('sentinel-answer-text') as HTMLElement;
-  const btnOpenSentinelSettings = document.getElementById('btn-open-sentinel-settings') as HTMLButtonElement;
+  const btnOpenSentinelSettings = document.getElementById('btn-open-sentinel-settings') as HTMLButtonElement | null;
 
   const sentinelModal = document.getElementById('sentinel-modal') as HTMLElement;
   const sentinelModalClose = document.getElementById('sentinel-modal-close-btn') as HTMLButtonElement;
@@ -148,6 +148,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const clock = new ParticleClock(clockCanvas, {
     is24Hour: current24Hour,
     showSeconds: currentShowSeconds,
+    anchorElement: clockContainer || undefined,
     onFpsUpdate: (fps) => {
       if (fpsCounter) fpsCounter.textContent = `${fps} FPS`;
     },
@@ -409,9 +410,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
+  search.onToggleSentinel = toggleSentinelMode;
+
   // Direct particle interaction: Click clock particles to activate Sentinel, click Sentinel particles to return
   if (clockCanvas) {
     clockCanvas.addEventListener('click', () => {
+      toggleSentinelMode();
+    });
+  }
+  if (clockContainer) {
+    clockContainer.addEventListener('click', () => {
       toggleSentinelMode();
     });
   }
