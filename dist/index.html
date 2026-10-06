@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>New Tab</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@300;400;500;600&family=Geist:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@300;400;500&display=swap"
+      rel="stylesheet"
+    />
+    <script type="module" crossorigin src="./assets/main-7E0FOtRv.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/main-DO721nph.css">
+  </head>
+  <body>
+    <!-- Subtle Ambient Noise Texture -->
+    <div id="noise-overlay" aria-hidden="true"></div>
+
+    <!-- Soft Radial Cursor Lighting -->
+    <div id="cursor-glow" aria-hidden="true"></div>
+
+    <div id="app">
+      <!-- Fixed Left Favorites Sidebar -->
+      <aside id="favorites-sidebar" aria-label="Favorites Sidebar">
+        <div class="sidebar-header">
+          <div class="sidebar-title-row">
+            <span class="sidebar-label">FAVORITES</span>
+            <span class="sidebar-count" id="favorites-count">0</span>
+          </div>
+          <button
+            id="btn-add-favorite"
+            class="icon-btn"
+            title="Add Favorite (Ctrl+N)"
+            aria-label="Add favorite"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+          </button>
+        </div>
+
+        <nav class="favorites-scroll-container">
+          <ul id="favorites-list" class="favorites-list" role="list">
+            <!-- Dynamically populated -->
+          </ul>
+        </nav>
+
+        <div class="sidebar-footer">
+          <span class="sidebar-hint"><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
+        </div>
+      </aside>
+
+      <!-- Centerpiece Hero: Clock, Date, Search -->
+      <main id="hero-section">
+        <!-- Faint Technical Radial Grid Structure -->
+        <div id="radial-grid" aria-hidden="true"></div>
+
+        <!-- Understated Date Display -->
+        <div id="date-display" aria-label="Current Date">
+          <!-- e.g. MONDAY · OCTOBER 5 -->
+        </div>
+
+        <!-- Interactive Canvas Particle Clock & Sentinel Anchor -->
+        <div id="clock-container" title="Click particles to activate Sentinel AI">
+          <canvas id="clock-canvas"></canvas>
+        </div>
+
+        <!-- Sentinel Interaction Stage (Spacious minimal typography, no chat bubbles) -->
+        <div id="sentinel-stage" class="sentinel-stage" aria-live="polite">
+          <div id="sentinel-status-container" class="sentinel-status-container">
+            <div id="sentinel-prompt-text" class="sentinel-prompt-text">What do you require?</div>
+          </div>
+          <div id="sentinel-response-container" class="sentinel-response-container">
+            <div id="sentinel-query-echo" class="sentinel-query-echo"></div>
+            <div id="sentinel-answer-text" class="sentinel-answer-text"></div>
+          </div>
+        </div>
+
+        <!-- Minimalist Integrated Search -->
+        <div id="search-wrapper">
+          <form id="search-form" action="https://www.google.com/search" method="GET">
+            <div id="search-container">
+              <span class="search-icon" aria-hidden="true">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+              </span>
+              <input
+                type="text"
+                id="search-input"
+                name="q"
+                placeholder="Search the web or type a URL..."
+                autocomplete="off"
+                spellcheck="false"
+                aria-label="Search the web"
+              />
+              <button
+                type="button"
+                id="search-clear-btn"
+                class="search-clear-btn"
+                aria-label="Clear search"
+                tabindex="-1"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
+              <button
+                type="button"
+                id="search-ai-btn"
+                class="search-ai-btn"
+                title="Toggle Sentinel AI Mode (Ctrl+A)"
+                aria-label="Toggle Sentinel AI Mode"
+              >
+                <span class="ai-symbol-wrapper" aria-hidden="true">
+                  <svg class="ai-spark-icon" width="14" height="14" viewBox="0 0 24 24" fill="none">
+                    <path d="M12 2C12 7.52 7.52 12 2 12C7.52 12 12 16.48 12 22C12 16.48 16.48 12 22 12C16.48 12 12 7.52 12 2Z" fill="url(#ai-sparkle-grad)" />
+                    <circle cx="19" cy="5" r="2.2" fill="url(#ai-sparkle-grad)" />
+                    <defs>
+                      <linearGradient id="ai-sparkle-grad" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+                        <stop offset="0%" stop-color="#ffffff"/>
+                        <stop offset="100%" stop-color="#b0b0b0"/>
+                      </linearGradient>
+                    </defs>
+                  </svg>
+                </span>
+                <span class="ai-label">AI</span>
+              </button>
+              <div id="search-kbd-hint" class="search-kbd"></div>
+
+              <!-- Live Autocomplete & History Suggestions -->
+              <div id="search-suggestions" class="search-suggestions" role="listbox" aria-label="Search suggestions">
+                <ul id="suggestions-list" class="suggestions-list"></ul>
+                <div class="suggestions-footer">
+                  <span class="suggestions-report">Report inappropriate predictions</span>
+                </div>
+              </div>
+            </div>
+          </form>
+        </div>
+      </main>
+
+      <!-- Discreet Top-Right Utilities Toolbar -->
+      <header id="top-toolbar">
+
+        <button
+          id="btn-toggle-format"
+          class="toolbar-btn"
+          title="Toggle 12h / 24h format (T)"
+          aria-label="Toggle time format"
+        >
+          <span id="format-label">24H</span>
+        </button>
+
+        <button
+          id="btn-toggle-seconds"
+          class="toolbar-btn"
+          title="Toggle seconds display (S)"
+          aria-label="Toggle seconds"
+        >
+          <span id="seconds-label">SEC</span>
+        </button>
+
+        <button
+          id="btn-toggle-sidebar"
+          class="toolbar-btn"
+          title="Toggle Sidebar (Ctrl+B)"
+          aria-label="Toggle Sidebar"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="9" y1="3" x2="9" y2="21"></line>
+          </svg>
+        </button>
+
+        <button
+          id="btn-open-shortcuts"
+          class="toolbar-btn"
+          title="Keyboard shortcuts (?)"
+          aria-label="Keyboard shortcuts"
+        >
+          <span>?</span>
+        </button>
+      </header>
+
+      <!-- Minimal Bottom Status indicator & Sentinel Configuration -->
+      <footer id="status-bar">
+        <button
+          id="sentinel-configure-btn"
+          class="status-btn sentinel-config-btn"
+          title="Configure Sentinel AI (API Key & Provider)"
+          aria-label="Configure Sentinel AI"
+        >
+          <span class="sentinel-status-indicator">●</span>
+          <span id="sentinel-config-status-label">Configure AI</span>
+        </button>
+        <div class="status-item">
+          <span class="status-dot"></span>
+          <span id="fps-counter" class="status-text">60 FPS</span>
+        </div>
+        <div class="status-item">
+          <span id="particle-counter" class="status-text">0 PTS</span>
+        </div>
+      </footer>
+    </div>
+
+
+    <!-- Modal: Add / Edit Favorite -->
+    <div id="favorite-modal" class="modal-backdrop" aria-hidden="true" role="dialog" aria-modal="true">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h2 id="modal-title" class="modal-heading">Add Favorite</h2>
+          <button id="modal-close-btn" class="icon-btn" aria-label="Close dialog">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+        <form id="favorite-form">
+          <input type="hidden" id="fav-id" value="" />
+          <div class="form-group">
+            <label for="fav-title" class="form-label">TITLE</label>
+            <input
+              type="text"
+              id="fav-title"
+              class="form-input"
+              placeholder="e.g. GitHub"
+              required
+              maxlength="40"
+              autocomplete="off"
+            />
+          </div>
+          <div class="form-group">
+            <label for="fav-url" class="form-label">URL</label>
+            <input
+              type="text"
+              id="fav-url"
+              class="form-input"
+              placeholder="https://..."
+              required
+              autocomplete="off"
+            />
+          </div>
+          <div class="modal-actions">
+            <button type="button" id="modal-cancel-btn" class="btn btn-secondary">Cancel</button>
+            <button type="submit" id="modal-submit-btn" class="btn btn-primary">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Modal: Keyboard Shortcuts Cheat Sheet -->
+    <div id="shortcuts-modal" class="modal-backdrop" aria-hidden="true" role="dialog" aria-modal="true">
+      <div class="modal-card shortcuts-card">
+        <div class="modal-header">
+          <h2 class="modal-heading">Keyboard Shortcuts</h2>
+          <button id="shortcuts-close-btn" class="icon-btn" aria-label="Close dialog">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+        <div class="shortcuts-list">
+          <div class="shortcut-row">
+            <span class="shortcut-desc">Focus Search</span>
+            <div class="shortcut-keys"><kbd id="sc-meta">⌘</kbd><kbd>K</kbd> / <kbd>/</kbd></div>
+          </div>
+          <div class="shortcut-row">
+            <span class="shortcut-desc">Dismiss Search / Close Modals</span>
+            <div class="shortcut-keys"><kbd>Esc</kbd></div>
+          </div>
+          <div class="shortcut-row">
+            <span class="shortcut-desc">Navigate Favorites</span>
+            <div class="shortcut-keys"><kbd>↑</kbd><kbd>↓</kbd></div>
+          </div>
+          <div class="shortcut-row">
+            <span class="shortcut-desc">Open Selected Favorite</span>
+            <div class="shortcut-keys"><kbd>Enter</kbd></div>
+          </div>
+          <div class="shortcut-row">
+            <span class="shortcut-desc">Add New Favorite</span>
+            <div class="shortcut-keys"><kbd>Ctrl</kbd><kbd>N</kbd></div>
+          </div>
+          <div class="shortcut-row">
+            <span class="shortcut-desc">Toggle 12h / 24h Clock</span>
+            <div class="shortcut-keys"><kbd>T</kbd></div>
+          </div>
+          <div class="shortcut-row">
+            <span class="shortcut-desc">Toggle Seconds Display</span>
+            <div class="shortcut-keys"><kbd>S</kbd></div>
+          </div>
+          <div class="shortcut-row">
+            <span class="shortcut-desc">Toggle Sidebar Rail</span>
+            <div class="shortcut-keys"><kbd>Ctrl</kbd><kbd>B</kbd></div>
+          </div>
+          <div class="shortcut-row">
+            <span class="shortcut-desc">Shift to Sentinel AI</span>
+            <div class="shortcut-keys"><kbd>Ctrl</kbd><kbd>A</kbd></div>
+          </div>
+          <div class="shortcut-row">
+            <span class="shortcut-desc">Exit Sentinel / Dismiss</span>
+            <div class="shortcut-keys"><kbd>Esc</kbd></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Sentinel BYOK Settings -->
+    <div id="sentinel-modal" class="modal-backdrop" aria-hidden="true" role="dialog" aria-modal="true">
+      <div class="modal-card sentinel-settings-card">
+        <div class="modal-header">
+          <div class="sentinel-modal-title-row">
+            <span class="sentinel-modal-badge">◉</span>
+            <h2 class="modal-heading">SENTINEL</h2>
+          </div>
+          <button id="sentinel-modal-close-btn" class="icon-btn" aria-label="Close dialog">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+
+        <form id="sentinel-settings-form">
+          <div class="form-group">
+            <label for="sentinel-provider-select" class="form-label">AI PROVIDER</label>
+            <select id="sentinel-provider-select" class="form-input form-select">
+              <optgroup label="100% FREE AI PROVIDERS (No Credit Card)">
+                <option value="groq">Groq (Ultra-Fast Free Llama 3.3 70B &amp; Mixtral)</option>
+                <option value="openrouter">OpenRouter (Free Multi-Model Hub)</option>
+                <option value="gemini">Google Gemini (Free Tier / 1,500 req/day)</option>
+              </optgroup>
+              <optgroup label="PAID / BYOK PROVIDERS">
+                <option value="openai">OpenAI (GPT-4o, GPT-4o Mini)</option>
+                <option value="claude">Anthropic Claude (Claude 3.5 Sonnet / Haiku)</option>
+              </optgroup>
+            </select>
+          </div>
+
+          <div class="form-group" id="sentinel-model-group">
+            <label for="sentinel-model-select" class="form-label">MODEL</label>
+            <select id="sentinel-model-select" class="form-input form-select">
+              <option value="auto">Auto-Detect / Adaptive Fallback (Recommended)</option>
+              <option value="gemini-3.8-flash">Gemini 3.8 Flash (High Performance)</option>
+              <option value="gemini-3.8-pro">Gemini 3.8 Pro (Ultra / Flagship Quality)</option>
+              <option value="gemini-3.5-flash">Gemini 3.5 Flash</option>
+              <option value="gemini-3.5-pro">Gemini 3.5 Pro</option>
+              <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+              <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <div class="form-label-row">
+              <label for="sentinel-api-key" class="form-label">API KEY</label>
+              <a href="https://console.groq.com/keys" id="sentinel-key-help-link" target="_blank" rel="noopener noreferrer" class="form-label-help">Get free key ↗</a>
+            </div>
+            <input
+              type="password"
+              id="sentinel-api-key"
+              class="form-input"
+              placeholder="Paste your personal API key..."
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </div>
+
+          <div class="sentinel-status-card">
+            <div class="sentinel-status-header">
+              <div class="sentinel-connection-status" id="sentinel-connection-status">
+                <span class="status-indicator-dot" id="sentinel-status-dot"></span>
+                <span class="status-indicator-text" id="sentinel-status-label">Offline</span>
+              </div>
+              <button type="button" id="sentinel-btn-test" class="btn btn-secondary btn-sm">Test Connection</button>
+            </div>
+            <div class="sentinel-status-details" id="sentinel-status-details"></div>
+          </div>
+
+          <div class="sentinel-privacy-notice">
+            <p>Your API key is stored locally on this device.</p>
+            <p>Sentinel does not send your key to any project-owned server.</p>
+            <p>Prompts are sent directly to your selected AI provider.</p>
+          </div>
+
+          <div class="modal-actions sentinel-actions">
+            <button type="button" id="sentinel-btn-clear" class="btn btn-secondary">Clear Key</button>
+            <button type="submit" id="sentinel-btn-save" class="btn btn-primary">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+  </body>
+</html>
