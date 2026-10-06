@@ -32,6 +32,7 @@ export class SearchController {
   private debounceTimer: number | null = null;
   private jsonpCounter: number = 0;
   private historyStorageKey = 'monochrome_search_history';
+  private static suggestionCache = new Map<string, string[]>();
 
   public onSentinelSubmit?: (query: string) => void;
   public onToggleSentinel?: () => void;
@@ -226,7 +227,11 @@ export class SearchController {
       return;
     }
 
-    // Debounce Google Suggest API request
+    // If query is already cached, execute instantly; otherwise debounce network request
+    const lowerTrimmed = trimmed.toLowerCase();
+    const isCached = SearchController.suggestionCache.has(lowerTrimmed);
+    const delay = isCached ? 0 : 75;
+
     this.debounceTimer = window.setTimeout(async () => {
       const history = this.getSearchHistory();
       const lowerQ = trimmed.toLowerCase();
@@ -271,17 +276,21 @@ export class SearchController {
       this.currentSuggestions = combined.slice(0, 4);
       this.selectedIndex = -1;
       this.renderSuggestions();
-    }, 120);
+    }, delay);
   }
 
   private fetchGoogleSuggestions(query: string): Promise<string[]> {
-    return new Promise((resolve) => {
-      const q = query.trim();
-      if (!q) {
-        resolve([]);
-        return;
-      }
+    const q = query.trim().toLowerCase();
+    if (!q) {
+      return Promise.resolve([]);
+    }
 
+    const cached = SearchController.suggestionCache.get(q);
+    if (cached) {
+      return Promise.resolve(cached);
+    }
+
+    return new Promise((resolve) => {
       const callbackName = `googleSuggest_${Date.now()}_${++this.jsonpCounter}`;
       const script = document.createElement('script');
 
@@ -307,6 +316,12 @@ export class SearchController {
               if (Array.isArray(item) && typeof item[0] === 'string') return item[0];
               return String(item);
             });
+            // Cache prediction results (bounded cache)
+            SearchController.suggestionCache.set(q, results);
+            if (SearchController.suggestionCache.size > 200) {
+              const firstKey = SearchController.suggestionCache.keys().next().value;
+              if (firstKey) SearchController.suggestionCache.delete(firstKey);
+            }
             resolve(results);
           } else {
             resolve([]);

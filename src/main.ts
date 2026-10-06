@@ -98,10 +98,9 @@ document.addEventListener('DOMContentLoaded', () => {
         requestAnimationFrame(() => {
           mouseRafScheduled = false;
 
-          // Isolate style update to the dedicated glow layer
+          // Hardware-accelerated GPU transform update (zero repaint)
           if (cursorGlow) {
-            cursorGlow.style.setProperty('--cursor-x', `${lastClientX}px`);
-            cursorGlow.style.setProperty('--cursor-y', `${lastClientY}px`);
+            cursorGlow.style.transform = `translate3d(${lastClientX}px, ${lastClientY}px, 0)`;
           }
 
           // Proximity awakening for favorites sidebar

@@ -61,11 +61,18 @@ npm run build
 
 ---
 
-## Load in Chrome Extension
+## Load in Chrome (New Tab & Matte Black Theme)
 
-1. Run `npm run build`
+### 1. Load the Custom New Tab
+1. Run `npm run build` (pre-built in `dist/`)
 2. Open Google Chrome and navigate to `chrome://extensions/`
 3. Toggle on **Developer mode** in the upper-right corner
 4. Click **Load unpacked**
-5. Select the `dist/` directory generated in this repository
-6. Open a new tab to experience the interface
+5. Select the `dist/` folder from this repository
+6. Open a new tab (`Ctrl + T`) to experience the interface!
+
+### 2. Load the Matte AMOLED Black Theme (Omnibox & Tabs)
+1. On `chrome://extensions/` (with Developer mode enabled)
+2. Click **Load unpacked**
+3. Select the `chrome-theme/` folder from this repository
+4. Your omnibox, tab strip, window frame, and toolbar will instantly become true matte AMOLED black!
