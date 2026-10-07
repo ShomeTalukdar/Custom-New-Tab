@@ -12,4 +12,13 @@ export default defineConfig({
       },
     },
   },
+  server: {
+    proxy: {
+      '/api/suggest': {
+        target: 'https://suggestqueries.google.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace('/api/suggest', '/complete/search?client=chrome'),
+      },
+    },
+  },
 });

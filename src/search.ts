@@ -422,17 +422,89 @@ export class SearchController {
     }, delay);
   }
 
-  private fetchGoogleSuggestions(query: string): Promise<string[]> {
+  private cacheSuggestions(q: string, results: string[]): void {
+    SearchController.suggestionCache.set(q, results);
+    if (SearchController.suggestionCache.size > 200) {
+      const firstKey = SearchController.suggestionCache.keys().next().value;
+      if (firstKey) SearchController.suggestionCache.delete(firstKey);
+    }
+  }
+
+  private async fetchGoogleSuggestions(query: string): Promise<string[]> {
     const q = query.trim().toLowerCase();
     if (!q) {
-      return Promise.resolve([]);
+      return [];
     }
 
     const cached = SearchController.suggestionCache.get(q);
     if (cached) {
-      return Promise.resolve(cached);
+      return cached;
     }
 
+    // Tier 1: Same-origin /api/suggest proxy (Immune to ad-blockers & browser tracking shields on Vercel)
+    try {
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 1200);
+      const res = await fetch(`/api/suggest?q=${encodeURIComponent(q)}`, {
+        signal: controller.signal,
+      });
+      window.clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const data = await res.json();
+        let results: string[] = [];
+        if (Array.isArray(data)) {
+          if (data.length > 1 && Array.isArray(data[1])) {
+            results = data[1].map((item: any) => (typeof item === 'string' ? item : String(item)));
+          } else {
+            results = data.map((item: any) => (typeof item === 'string' ? item : String(item)));
+          }
+        }
+        if (results.length > 0) {
+          this.cacheSuggestions(q, results);
+          return results;
+        }
+      }
+    } catch {
+      // Fallback to client-side strategies
+    }
+
+    // Tier 2: Direct Google Suggest JSONP (Works in unpacked Chrome Extension)
+    try {
+      const jsonpResults = await this.fetchJsonpSuggestions(q);
+      if (jsonpResults.length > 0) {
+        this.cacheSuggestions(q, jsonpResults);
+        return jsonpResults;
+      }
+    } catch {
+      // Fallback to Tier 3
+    }
+
+    // Tier 3: Open CORS Autocomplete (Guaranteed public web fallback for all browsers/ad-blockers)
+    try {
+      const ddgRes = await fetch(
+        `https://duckduckgo.com/ac/?q=${encodeURIComponent(q)}&type=list`
+      );
+      if (ddgRes.ok) {
+        const ddgData = await ddgRes.json();
+        if (Array.isArray(ddgData) && Array.isArray(ddgData[1])) {
+          const results: string[] = ddgData[1].map((item: any) =>
+            typeof item === 'string' ? item : String(item)
+          );
+          if (results.length > 0) {
+            this.cacheSuggestions(q, results);
+            return results;
+          }
+        }
+      }
+    } catch {
+      // Ignore
+    }
+
+    return [];
+  }
+
+  private fetchJsonpSuggestions(q: string): Promise<string[]> {
     return new Promise((resolve) => {
       const callbackName = `googleSuggest_${Date.now()}_${++this.jsonpCounter}`;
       const script = document.createElement('script');
@@ -440,7 +512,7 @@ export class SearchController {
       const timeoutId = window.setTimeout(() => {
         cleanup();
         resolve([]);
-      }, 1500);
+      }, 1400);
 
       const cleanup = () => {
         window.clearTimeout(timeoutId);
@@ -459,12 +531,6 @@ export class SearchController {
               if (Array.isArray(item) && typeof item[0] === 'string') return item[0];
               return String(item);
             });
-            // Cache prediction results (bounded cache)
-            SearchController.suggestionCache.set(q, results);
-            if (SearchController.suggestionCache.size > 200) {
-              const firstKey = SearchController.suggestionCache.keys().next().value;
-              if (firstKey) SearchController.suggestionCache.delete(firstKey);
-            }
             resolve(results);
           } else {
             resolve([]);
