@@ -11,6 +11,13 @@ export interface SuggestionItem {
   subtext?: string;
 }
 
+export interface AttachedImage {
+  file?: File;
+  dataUrl: string;
+  name: string;
+  sizeFormatted: string;
+}
+
 const CLOCK_ICON_SVG = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`;
 const SEARCH_ICON_SVG = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`;
 const DELETE_ICON_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
@@ -25,6 +32,15 @@ export class SearchController {
   private suggestionsContainer: HTMLElement | null;
   private suggestionsList: HTMLElement | null;
 
+  // Image Attachment Elements
+  private attachBtn: HTMLButtonElement | null;
+  private fileInput: HTMLInputElement | null;
+  private imagePreviewContainer: HTMLElement | null;
+  private imageThumb: HTMLImageElement | null;
+  private imageName: HTMLElement | null;
+  private imageRemoveBtn: HTMLButtonElement | null;
+
+  private currentAttachedImage: AttachedImage | null = null;
   private mode: 'search' | 'sentinel' = 'search';
   private selectedIndex: number = -1;
   private currentSuggestions: SuggestionItem[] = [];
@@ -34,7 +50,7 @@ export class SearchController {
   private historyStorageKey = 'monochrome_search_history';
   private static suggestionCache = new Map<string, string[]>();
 
-  public onSentinelSubmit?: (query: string) => void;
+  public onSentinelSubmit?: (query: string, attachedImage?: AttachedImage | null) => void;
   public onToggleSentinel?: () => void;
 
   constructor(
@@ -56,7 +72,14 @@ export class SearchController {
     this.suggestionsContainer = suggestionsContainer || container.querySelector('#search-suggestions');
     this.suggestionsList = suggestionsList || container.querySelector('#suggestions-list');
 
-    this.seedInitialHistoryIfEmpty();
+    // Query attachment elements
+    this.attachBtn = container.querySelector('#search-attach-btn');
+    this.fileInput = container.querySelector('#search-file-input');
+    this.imagePreviewContainer = container.querySelector('#search-image-preview');
+    this.imageThumb = container.querySelector('#search-image-thumb');
+    this.imageName = container.querySelector('#search-image-name');
+    this.imageRemoveBtn = container.querySelector('#search-image-remove');
+
     this.init();
   }
 
@@ -136,6 +159,120 @@ export class SearchController {
         this.executeSearch();
       }
     });
+
+    // ------------------------------------------------------------------------
+    // Image Attachment Handlers ("+" click, Drag & Drop, Clipboard Paste)
+    // ------------------------------------------------------------------------
+
+    // 1. "+" button triggers hidden file input
+    if (this.attachBtn && this.fileInput) {
+      this.attachBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.fileInput?.click();
+      });
+
+      this.fileInput.addEventListener('change', () => {
+        if (this.fileInput?.files && this.fileInput.files.length > 0) {
+          this.handleFile(this.fileInput.files[0]);
+          this.fileInput.value = '';
+        }
+      });
+    }
+
+    // 2. Remove attached image button
+    if (this.imageRemoveBtn) {
+      this.imageRemoveBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.removeAttachedImage();
+        this.focus();
+      });
+    }
+
+    // 3. Drag and Drop onto Search Container
+    let dragCounter = 0;
+    this.container.addEventListener('dragenter', (e: DragEvent) => {
+      if (e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files')) {
+        e.preventDefault();
+        dragCounter++;
+        this.container.classList.add('drag-over');
+      }
+    });
+
+    this.container.addEventListener('dragover', (e: DragEvent) => {
+      if (e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files')) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+        this.container.classList.add('drag-over');
+      }
+    });
+
+    this.container.addEventListener('dragleave', (e: DragEvent) => {
+      e.preventDefault();
+      dragCounter--;
+      if (dragCounter <= 0) {
+        dragCounter = 0;
+        this.container.classList.remove('drag-over');
+      }
+    });
+
+    this.container.addEventListener('drop', (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dragCounter = 0;
+      this.container.classList.remove('drag-over');
+
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        for (let i = 0; i < e.dataTransfer.files.length; i++) {
+          const file = e.dataTransfer.files[i];
+          if (file.type.startsWith('image/')) {
+            this.handleFile(file);
+            break;
+          }
+        }
+      }
+    });
+
+    // Window drag protection
+    window.addEventListener('dragover', (e) => {
+      if (e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files')) {
+        e.preventDefault();
+      }
+    });
+
+    window.addEventListener('drop', (e) => {
+      if (!this.container.contains(e.target as Node)) {
+        if (e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files')) {
+          e.preventDefault();
+        }
+      }
+    });
+
+    // 4. Clipboard Image Paste (Ctrl+V)
+    const handlePaste = (e: ClipboardEvent) => {
+      if (!e.clipboardData) return;
+      const items = e.clipboardData.items;
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.type.indexOf('image') !== -1) {
+          e.preventDefault();
+          const file = item.getAsFile();
+          if (file) {
+            this.handleFile(file);
+          }
+          break;
+        }
+      }
+    };
+
+    this.input.addEventListener('paste', handlePaste);
+    window.addEventListener('paste', (e) => {
+      const activeTag = document.activeElement?.tagName.toLowerCase();
+      if (activeTag === 'input' && document.activeElement !== this.input) return;
+      if (activeTag === 'textarea') return;
+      handlePaste(e);
+    });
   }
 
   private handleKeyDown(e: KeyboardEvent): void {
@@ -166,6 +303,12 @@ export class SearchController {
       }
       this.updateSelectionVisuals();
       this.updateClearBtnVisibility();
+      return;
+    }
+
+    if (e.key === 'Backspace' && this.input.value.length === 0 && this.currentAttachedImage) {
+      e.preventDefault();
+      this.removeAttachedImage();
       return;
     }
 
@@ -467,9 +610,10 @@ export class SearchController {
       if (!stored) return [];
       const parsed = JSON.parse(stored);
       if (Array.isArray(parsed)) {
-        return parsed.map((item) =>
-          typeof item === 'string' ? { text: item } : item
-        );
+        const legacyQueries = new Set(['kolkata', 'kolkata station to howrah station', 'kolaghat']);
+        return parsed
+          .map((item) => (typeof item === 'string' ? { text: item } : item))
+          .filter((item) => item && item.text && !legacyQueries.has(item.text.toLowerCase().trim()));
       }
     } catch {
       // ignore
@@ -499,21 +643,6 @@ export class SearchController {
         (h) => h.text.toLowerCase() !== text.toLowerCase()
       );
       localStorage.setItem(this.historyStorageKey, JSON.stringify(history));
-    } catch {
-      // ignore
-    }
-  }
-
-  private seedInitialHistoryIfEmpty(): void {
-    try {
-      if (localStorage.getItem(this.historyStorageKey) === null) {
-        const initial = [
-          { text: 'kolkata' },
-          { text: 'kolkata station to howrah station' },
-          { text: 'kolaghat', subtext: 'Images' },
-        ];
-        localStorage.setItem(this.historyStorageKey, JSON.stringify(initial));
-      }
     } catch {
       // ignore
     }
@@ -581,21 +710,95 @@ export class SearchController {
     }
   }
 
+  public handleFile(file: File): void {
+    if (!file.type.startsWith('image/')) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const dataUrl = e.target?.result as string;
+      if (!dataUrl) return;
+
+      const sizeKB = Math.round(file.size / 1024);
+      const sizeStr = sizeKB > 1024 ? `${(sizeKB / 1024).toFixed(1)} MB` : `${sizeKB} KB`;
+
+      this.setAttachedImage({
+        file,
+        dataUrl,
+        name: file.name || 'Pasted Image',
+        sizeFormatted: sizeStr,
+      });
+    };
+    reader.readAsDataURL(file);
+  }
+
+  public setAttachedImage(img: AttachedImage | null): void {
+    this.currentAttachedImage = img;
+    if (!this.imagePreviewContainer) return;
+
+    if (img) {
+      this.container.classList.add('has-image');
+      this.imagePreviewContainer.style.display = 'flex';
+      if (this.imageThumb) this.imageThumb.src = img.dataUrl;
+      if (this.imageName) this.imageName.textContent = img.name;
+      if (this.mode === 'sentinel') {
+        this.input.placeholder = 'Ask Sentinel about this image...';
+      } else {
+        this.input.placeholder = 'Search with image or type query...';
+      }
+      this.focus();
+    } else {
+      this.container.classList.remove('has-image');
+      this.imagePreviewContainer.style.display = 'none';
+      if (this.imageThumb) this.imageThumb.src = '';
+      if (this.imageName) this.imageName.textContent = '';
+      if (this.mode === 'sentinel') {
+        this.input.placeholder = 'Ask Sentinel...';
+      } else {
+        this.input.placeholder = 'Search the web or type a URL...';
+      }
+    }
+  }
+
+  public removeAttachedImage(): void {
+    this.setAttachedImage(null);
+  }
+
+  public getAttachedImage(): AttachedImage | null {
+    return this.currentAttachedImage;
+  }
+
   public executeSearch(customQuery?: string): void {
     const query = (customQuery !== undefined ? customQuery : this.input.value).trim();
-    if (!query) return;
+    const attachedImage = this.currentAttachedImage;
+
+    // If neither query nor image is present, ignore
+    if (!query && !attachedImage) return;
 
     this.closeSuggestions();
 
     if (this.mode === 'sentinel') {
       if (this.onSentinelSubmit) {
-        this.onSentinelSubmit(query);
+        this.onSentinelSubmit(query, attachedImage);
       }
+      this.removeAttachedImage();
       return;
     }
 
-    // Save to search history
-    this.addToSearchHistory(query);
+    if (query) {
+      this.addToSearchHistory(query);
+    }
+
+    if (attachedImage) {
+      // Search by image via Google Lens or image search
+      if (query) {
+        const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+        window.location.href = searchUrl;
+      } else {
+        window.location.href = 'https://lens.google.com/';
+      }
+      this.removeAttachedImage();
+      return;
+    }
 
     // Check if query is a URL or domain
     const isExplicitUrl = /^https?:\/\//i.test(query);

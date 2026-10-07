@@ -433,8 +433,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Handle Sentinel input query submission
-  search.onSentinelSubmit = async (query) => {
+  // Handle Sentinel input query submission (supporting text and attached images)
+  search.onSentinelSubmit = async (query, attachedImage) => {
     clock.setSentinelThinking(true);
     if (sentinelStatusContainer) {
       sentinelStatusContainer.style.display = 'none';
@@ -446,7 +446,16 @@ document.addEventListener('DOMContentLoaded', () => {
       sentinelResponseContainer.classList.add('visible');
     }
     if (sentinelQueryEcho) {
-      sentinelQueryEcho.textContent = query;
+      if (attachedImage) {
+        sentinelQueryEcho.innerHTML = `
+          <div class="sentinel-echo-with-image">
+            <img src="${attachedImage.dataUrl}" alt="${attachedImage.name}" class="sentinel-echo-thumb" />
+            <span>${query || 'Analyze this image'}</span>
+          </div>
+        `;
+      } else {
+        sentinelQueryEcho.textContent = query;
+      }
     }
     if (sentinelAnswerText) {
       sentinelAnswerText.innerHTML = `
@@ -458,7 +467,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     search.clear();
 
-    const result = await sentinel.query(query);
+    const fullPrompt = attachedImage
+      ? `${query ? query + '\n\n' : ''}[Image attached: ${attachedImage.name} (${attachedImage.sizeFormatted})]`
+      : query;
+
+    const result = await sentinel.query(fullPrompt);
 
     clock.setSentinelThinking(false);
     if (sentinelAnswerText) {
