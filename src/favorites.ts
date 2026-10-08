@@ -52,9 +52,9 @@ export class FavoritesManager {
   private load(): void {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
+      if (stored !== null) {
         const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        if (Array.isArray(parsed)) {
           this.favorites = parsed;
           return;
         }
@@ -63,7 +63,7 @@ export class FavoritesManager {
       console.warn('Failed to load favorites from localStorage', err);
     }
 
-    // Initialize with defaults if empty
+    // Initialize with defaults only if never saved before
     this.favorites = DEFAULT_FAVORITES.map((item, index) => ({
       ...item,
       id: `fav_${Date.now()}_${index}`,
@@ -120,6 +120,13 @@ export class FavoritesManager {
     if (this.selectedIndex >= this.favorites.length) {
       this.selectedIndex = this.favorites.length - 1;
     }
+    this.save();
+    this.render();
+  }
+
+  public clearAll(): void {
+    this.favorites = [];
+    this.selectedIndex = -1;
     this.save();
     this.render();
   }
@@ -189,6 +196,17 @@ export class FavoritesManager {
 
     if (this.countElement) {
       this.countElement.textContent = String(this.favorites.length);
+    }
+
+    if (this.favorites.length === 0) {
+      const emptyLi = document.createElement('li');
+      emptyLi.className = 'fav-empty-state';
+      emptyLi.innerHTML = `
+        <span class="fav-empty-text">No favorites</span>
+        <span class="fav-empty-hint">Click + to add</span>
+      `;
+      this.listElement.appendChild(emptyLi);
+      return;
     }
 
     this.favorites.forEach((fav, index) => {

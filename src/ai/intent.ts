@@ -265,6 +265,19 @@ export class IntentDetector {
       }
     }
 
+    // Pattern: "clear favorites" or "remove all favorites" or "delete all favorites"
+    if (/^(?:clear|remove\s+all|delete\s+all)\s+(?:favorites|my\s+favorites)$/i.test(query)) {
+      return {
+        type: 'favorites_remove',
+        handledLocally: true,
+        message: 'Cleared all favorites.',
+        action: () => {
+          this.favoritesManager?.clearAll();
+        },
+        originalQuery: query,
+      };
+    }
+
     return null;
   }
 
